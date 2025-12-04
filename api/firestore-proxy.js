@@ -1,22 +1,24 @@
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // Initialize Firebase Admin
 let db;
 try {
-  const serviceAccount = JSON.parse(process.env.FIRESTORE_SERVICE_ACCOUNT);
-  
-  initializeApp({
-    credential: cert(serviceAccount)
-  });
-  
-  db = getFirestore();
-  console.log('Firestore initialized successfully');
+  if (process.env.FIRESTORE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIRESTORE_SERVICE_ACCOUNT);
+    
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+    
+    db = getFirestore();
+    console.log('Firestore initialized successfully');
+  }
 } catch (error) {
   console.error('Firestore initialization failed:', error);
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
@@ -33,12 +35,14 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Check if Firestore is initialized
     if (!db) {
-      throw new Error('Firestore not initialized. Check FIRESTORE_SERVICE_ACCOUNT environment variable.');
+      return res.status(500).json({ 
+        error: 'Firestore not initialized',
+        details: 'FIRESTORE_SERVICE_ACCOUNT environment variable is not set or invalid'
+      });
     }
 
-    // Simple connection test - try to get server timestamp
+    // Test connection
     const testRef = db.collection('test').doc('connection');
     
     await testRef.set({
@@ -47,7 +51,6 @@ module.exports = async function handler(req, res) {
       licenseKey: licenseKey
     }, { merge: true });
 
-    // Read it back to verify
     const doc = await testRef.get();
     
     if (doc.exists) {
@@ -67,4 +70,4 @@ module.exports = async function handler(req, res) {
       details: error.message 
     });
   }
-};
+}

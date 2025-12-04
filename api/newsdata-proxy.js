@@ -1,9 +1,8 @@
-module.exports = async function handler(req, res) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, X-License-Key',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS'
-  };
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -17,8 +16,6 @@ module.exports = async function handler(req, res) {
 
   try {
     const params = new URLSearchParams(req.query);
-    
-    // ADD YOUR NEWSDATA KEY in Vercel environment variables
     params.append('apikey', process.env.NEWSDATA_KEY);
 
     const response = await fetch(`https://newsdata.io/api/1/news?${params.toString()}`, {
@@ -29,13 +26,13 @@ module.exports = async function handler(req, res) {
     });
 
     const data = await response.json();
-
     return res.status(response.status).json(data);
+    
   } catch (error) {
-    console.error('NewsData proxy error:', error);
+    console.error('NewsData API error:', error);
     return res.status(500).json({ 
-      error: error.message,
-      details: 'Check server logs'
+      error: 'NewsData API error',
+      details: error.message 
     });
   }
-};
+}

@@ -1,14 +1,11 @@
-// License key validation - ADD YOUR LICENSE KEYS HERE
+// License key validation
 const validLicenses = new Set([
   "revencast-license-001",
   "revencast-license-002", 
   "revencast-license-003"
-  // Add all your customer license keys here
 ]);
 
-module.exports = async function handler(req, res) {
-  console.log('Auth function called:', { method: req.method, hasLicenseKey: !!req.headers['x-license-key'] });
-  
+export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
@@ -26,4 +23,4 @@ module.exports = async function handler(req, res) {
   }
 
   return res.status(200).json({ valid: true, message: 'License valid' });
-};
+}

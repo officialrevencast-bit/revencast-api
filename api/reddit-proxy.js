@@ -1,4 +1,4 @@
-let cachedToken = null; // { token, expiryMs }
+let cachedToken = null;
 
 async function getRedditAppToken() {
   const now = Date.now();
@@ -6,11 +6,8 @@ async function getRedditAppToken() {
     return cachedToken.token;
   }
 
-  // HARDCODED client_id + user-agent
-  const clientId = "YJ-wcP9Bz-uCK857l3xV2g";        // <-- hardcoded
-  const userAgent = "RevenCast/1.0";               // <-- hardcoded
-
-  // KEEP SECRET IN ENV (never hardcode secrets)
+  const clientId = "YJ-wcP9Bz-uCK857l3xV2g";
+  const userAgent = "RevenCast/1.0";
   const clientSecret = process.env.REDDIT_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
@@ -35,7 +32,7 @@ async function getRedditAppToken() {
     throw new Error(`Failed to acquire reddit token: ${res.status} ${txt}`);
   }
 
-  const json = await res.json().catch(() => null);
+  const json = await res.json();
   if (!json || !json.access_token) {
     throw new Error(`Invalid token response from Reddit: ${JSON.stringify(json)}`);
   }
@@ -49,12 +46,11 @@ async function getRedditAppToken() {
   return token;
 }
 
-module.exports = async function handler(req, res) {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, X-License-Key",
-    "Access-Control-Allow-Methods": "POST, OPTIONS"
-  };
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-License-Key");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -66,26 +62,18 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const body = req.body || {};
-    const q = (body.q || "").trim();
-    if (!q) {
+    const { q, limit = 25, sort = "relevance", time = "all" } = req.body;
+    
+    if (!q || !q.trim()) {
       return res.status(400).json({ error: "Missing required parameter: q" });
     }
-
-    const limit = body.limit ? Number(body.limit) : 25;
-    const sort = body.sort || "relevance";
-    const time = body.time || "all";
 
     const token = await getRedditAppToken();
     const userAgent = "RevenCast/1.0";
 
-    const url =
-      `https://oauth.reddit.com/search?q=${encodeURIComponent(q)}` +
-      `&limit=${encodeURIComponent(limit)}` +
-      `&sort=${encodeURIComponent(sort)}` +
-      `&t=${encodeURIComponent(time)}`;
+    const url = `https://oauth.reddit.com/search?q=${encodeURIComponent(q)}&limit=${limit}&sort=${sort}&t=${time}`;
 
-    const resp = await fetch(url, {
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -94,14 +82,11 @@ module.exports = async function handler(req, res) {
       }
     });
 
-    const data = await resp.json();
-
-    return res.status(resp.status).json(data);
+    const data = await response.json();
+    return res.status(response.status).json(data);
+    
   } catch (err) {
-    console.error('Reddit proxy error:', err);
-    return res.status(500).json({ 
-      error: err.message,
-      details: 'Check server logs'
-    });
+    console.error('Reddit API error:', err);
+    return res.status(500).json({ error: err.message });
   }
-};
+}
