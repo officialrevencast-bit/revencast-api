@@ -1,6 +1,4 @@
-import fetch from 'node-fetch';
-
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
@@ -35,9 +33,13 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
+
     return res.status(response.status).json(data);
-    
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error('OpenAI proxy error:', error);
+    return res.status(500).json({ 
+      error: error.message,
+      details: 'Check server logs'
+    });
   }
-}
+};

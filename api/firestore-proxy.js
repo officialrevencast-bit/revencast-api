@@ -1,5 +1,5 @@
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 
 // Initialize Firebase Admin
 let db;
@@ -16,7 +16,7 @@ try {
   console.error('Firestore initialization failed:', error);
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
@@ -33,6 +33,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Check if Firestore is initialized
+    if (!db) {
+      throw new Error('Firestore not initialized. Check FIRESTORE_SERVICE_ACCOUNT environment variable.');
+    }
+
     // Simple connection test - try to get server timestamp
     const testRef = db.collection('test').doc('connection');
     
@@ -62,4 +67,4 @@ export default async function handler(req, res) {
       details: error.message 
     });
   }
-}
+};

@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 let cachedToken = null; // { token, expiryMs }
 
 async function getRedditAppToken() {
@@ -51,11 +49,12 @@ async function getRedditAppToken() {
   return token;
 }
 
-export default async function handler(req, res) {
-  // Set CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-License-Key");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+module.exports = async function handler(req, res) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, X-License-Key",
+    "Access-Control-Allow-Methods": "POST, OPTIONS"
+  };
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -67,23 +66,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { q, limit = 25, sort = "relevance", time = "all" } = req.body;
-    
-    const query = (q || "").trim();
-    if (!query) {
+    const body = req.body || {};
+    const q = (body.q || "").trim();
+    if (!q) {
       return res.status(400).json({ error: "Missing required parameter: q" });
     }
+
+    const limit = body.limit ? Number(body.limit) : 25;
+    const sort = body.sort || "relevance";
+    const time = body.time || "all";
 
     const token = await getRedditAppToken();
     const userAgent = "RevenCast/1.0";
 
     const url =
-      `https://oauth.reddit.com/search?q=${encodeURIComponent(query)}` +
+      `https://oauth.reddit.com/search?q=${encodeURIComponent(q)}` +
       `&limit=${encodeURIComponent(limit)}` +
       `&sort=${encodeURIComponent(sort)}` +
       `&t=${encodeURIComponent(time)}`;
 
-    const response = await fetch(url, {
+    const resp = await fetch(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -92,10 +94,14 @@ export default async function handler(req, res) {
       }
     });
 
-    const data = await response.json();
-    return res.status(response.status).json(data);
-    
+    const data = await resp.json();
+
+    return res.status(resp.status).json(data);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('Reddit proxy error:', err);
+    return res.status(500).json({ 
+      error: err.message,
+      details: 'Check server logs'
+    });
   }
-}
+};

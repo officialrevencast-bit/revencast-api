@@ -6,7 +6,9 @@ const validLicenses = new Set([
   // Add all your customer license keys here
 ]);
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+  console.log('Auth function called:', { method: req.method, hasLicenseKey: !!req.headers['x-license-key'] });
+  
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key');
@@ -24,4 +26,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ valid: true, message: 'License valid' });
-}
+};
