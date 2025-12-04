@@ -2,6 +2,7 @@
   "name": "revencast-api",
   "version": "1.0.0",
   "description": "RevenCast API Proxy Services",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "dev": "vercel dev",
@@ -9,10 +10,6 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2",
-    "firebase-admin": "^12.0.0"
-  },
-  "devDependencies": {
     "@vercel/node": "^3.0.0"
   },
   "engines": {
