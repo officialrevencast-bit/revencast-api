@@ -35,8 +35,8 @@ export default async function handler(req, res) {
     if (!searchData.items || searchData.items.length === 0) {
       return res.status(200).json({
         items: [],
-        totalResults: 0,
-        searchData: searchData
+        videos: [],
+        totalResults: 0
       });
     }
 
@@ -48,8 +48,8 @@ export default async function handler(req, res) {
     if (videoIds.length === 0) {
       return res.status(200).json({
         items: [],
-        totalResults: 0,
-        searchData: searchData
+        videos: [],
+        totalResults: 0
       });
     }
 
@@ -63,21 +63,29 @@ export default async function handler(req, res) {
     const combinedItems = searchData.items.map(searchItem => {
       const videoId = searchItem.id.videoId;
       const videoStats = videosData.items?.find(v => v.id === videoId);
+      const viewCount = videoStats?.statistics?.viewCount || '0';
       
       return {
         id: videoId,
         snippet: searchItem.snippet,
         statistics: videoStats?.statistics || { viewCount: '0', likeCount: '0', commentCount: '0' },
         contentDetails: videoStats?.contentDetails || {},
-        // Add viewCount directly for easier access
-        viewCount: videoStats?.statistics?.viewCount || '0'
+        // KEY: Add BOTH fields for compatibility
+        viewCount: viewCount,
+        views: viewCount,
+        // Additional fields for easier access
+        title: searchItem.snippet?.title,
+        channel: searchItem.snippet?.channelTitle,
+        publishedAt: searchItem.snippet?.publishedAt,
+        url: `https://youtube.com/watch?v=${videoId}`
       };
     });
 
-    // STEP 5: Return enriched data
+    // STEP 5: Return enriched data with full compatibility
     return res.status(200).json({
       items: combinedItems,
-      totalResults: searchData.pageInfo?.totalResults || 0,
+      videos: combinedItems,  // Same data, different field name for compatibility
+      totalResults: searchData.pageInfo?.totalResults || combinedItems.length,
       searchInfo: {
         query: q,
         resultsPerPage: searchData.pageInfo?.resultsPerPage || maxResults
