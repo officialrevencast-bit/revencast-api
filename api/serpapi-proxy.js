@@ -15,8 +15,29 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Build params (allow the client to send product_name/product_description for immersive queries)
     const params = new URLSearchParams(req.query);
-    params.append('api_key', process.env.SERPAPI_KEY);
+
+    // If the client requested the Immersive Product engine but didn't provide a query, build one
+    if ((req.query.engine === 'google_immersive_product' || req.query.engine === 'google_immersive_product') && !req.query.q) {
+      let builtQ = '';
+      if (req.query.product_name) builtQ += req.query.product_name;
+      if (req.query.product_description) {
+        const descWords = String(req.query.product_description).split(/\s+/).slice(0, 40).join(' ');
+        builtQ += (builtQ ? ' ' : '') + descWords;
+      }
+      if (req.query.business_category) builtQ += (builtQ ? ' ' : '') + req.query.business_category;
+      if (req.query.country) builtQ += (builtQ ? ' ' : '') + req.query.country;
+
+      if (builtQ) {
+        params.set('q', builtQ);
+        params.set('product_query', builtQ);
+      }
+
+      // Allow passing a country code as gl for locale-specific results
+      if (req.query.country_code) params.set('gl', req.query.country_code);
+    }
+
 
     const response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
       method: 'GET',
