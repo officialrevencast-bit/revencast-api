@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { q, maxResults = 10, type = 'video', part = 'snippet', publishedAfter, order = 'date' } = req.body;
+    const { q, maxResults = 10, type = 'video', part = 'snippet', publishedAfter, publishedBefore, days = 60, samples = 8, order = 'date' } = req.body;
     
     if (!q || !q.trim()) {
       return res.status(400).json({ error: 'Missing required parameter: q' });
@@ -26,24 +26,64 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'YOUTUBE_API_KEY not configured' });
     }
 
-    // STEP 1: Search for videos with date filter if provided
-    let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=${type}&q=${encodeURIComponent(q)}&maxResults=${maxResults}&key=${apiKey}`;
-    
-    // Add publishedAfter parameter if provided (30-day filter)
-    if (publishedAfter) {
-      searchUrl += `&publishedAfter=${encodeURIComponent(publishedAfter)}`;
+    // If explicit date range provided, perform a single search as before.
+    let searchData = null;
+
+    if (publishedAfter || publishedBefore) {
+      // Single-query path
+      let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=${part}&type=${type}&q=${encodeURIComponent(q)}&maxResults=${maxResults}&key=${apiKey}`;
+      if (publishedAfter) searchUrl += `&publishedAfter=${encodeURIComponent(publishedAfter)}`;
+      if (publishedBefore) searchUrl += `&publishedBefore=${encodeURIComponent(publishedBefore)}`;
+      searchUrl += `&order=${order}`;
+
+      console.log(`YouTube API Call: ${searchUrl}`);
+      if (publishedAfter) console.log(`Filtering videos published after: ${publishedAfter}`);
+
+      const searchResponse = await fetch(searchUrl);
+      searchData = await searchResponse.json();
+    } else {
+      // Default behavior: sample random days in the last `days` window and aggregate results
+      const daysWindow = Math.max(1, Math.min(days, 365));
+      const sampleCount = Math.max(1, Math.min(samples, 20));
+      const now = new Date();
+      const startWindow = new Date(now.getTime() - daysWindow * 24 * 60 * 60 * 1000);
+
+      // Generate unique random day strings (YYYY-MM-DD)
+      const generated = new Set();
+      const randDays = [];
+      while (randDays.length < sampleCount) {
+        const rand = new Date(startWindow.getTime() + Math.floor(Math.random() * (now.getTime() - startWindow.getTime())));
+        const dayStr = rand.toISOString().slice(0, 10);
+        if (!generated.has(dayStr)) {
+          generated.add(dayStr);
+          randDays.push(dayStr);
+        }
+      }
+
+      console.log(`YouTube sampling over last ${daysWindow} days using ${randDays.length} sample days: ${randDays.join(',')}`);
+
+      const searchPromises = randDays.map(dayStr => {
+        const dayStart = new Date(dayStr + 'T00:00:00Z').toISOString();
+        const dayEnd = new Date(new Date(dayStr + 'T00:00:00Z').getTime() + 24 * 60 * 60 * 1000).toISOString();
+        let url = `https://www.googleapis.com/youtube/v3/search?part=${part}&type=${type}&q=${encodeURIComponent(q)}&maxResults=${maxResults}&key=${apiKey}`;
+        url += `&publishedAfter=${encodeURIComponent(dayStart)}&publishedBefore=${encodeURIComponent(dayEnd)}&order=${order}`;
+        console.log(`YouTube sample call: ${url}`);
+        return fetch(url).then(r => r.json()).catch(err => ({ error: err }));
+      });
+
+      const sampleResults = (await Promise.all(searchPromises)).filter(r => r && !r.error);
+      const allItems = sampleResults.flatMap(r => r.items || []);
+
+      // Deduplicate by video id
+      const itemsById = new Map();
+      for (const item of allItems) {
+        const id = item.id?.videoId || (item.id && (item.id.videoId || item.id));
+        if (id && !itemsById.has(id)) itemsById.set(id, item);
+      }
+
+      const aggregatedItems = Array.from(itemsById.values());
+      searchData = { items: aggregatedItems, pageInfo: { totalResults: aggregatedItems.length, resultsPerPage: maxResults } };
     }
-    
-    // Add order parameter (default to 'date' for most recent)
-    searchUrl += `&order=${order}`;
-    
-    console.log(`YouTube API Call: ${searchUrl}`);
-    if (publishedAfter) {
-      console.log(`Filtering videos published after: ${publishedAfter}`);
-    }
-    
-    const searchResponse = await fetch(searchUrl);
-    const searchData = await searchResponse.json();
 
     // Check for API errors
     if (searchData.error) {
