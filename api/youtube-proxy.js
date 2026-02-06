@@ -26,6 +26,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'YOUTUBE_API_KEY not configured' });
     }
 
+    // Track whether we used a single search URL or sampled dates so responses can include metadata
+    let usedSearchUrl = null;
+    let sampledDates = null;
+
     // If explicit date range provided, perform a single search as before.
     let searchData = null;
 
@@ -38,6 +42,10 @@ export default async function handler(req, res) {
 
       console.log(`YouTube API Call: ${searchUrl}`);
       if (publishedAfter) console.log(`Filtering videos published after: ${publishedAfter}`);
+
+      // Record metadata for response
+      usedSearchUrl = searchUrl;
+      sampledDates = (publishedAfter || publishedBefore) ? [publishedAfter || null, publishedBefore || null] : null;
 
       const searchResponse = await fetch(searchUrl);
       searchData = await searchResponse.json();
@@ -61,6 +69,9 @@ export default async function handler(req, res) {
       }
 
       console.log(`YouTube sampling over last ${daysWindow} days using ${randDays.length} sample days: ${randDays.join(',')}`);
+
+      // Save sampled dates for response metadata
+      sampledDates = randDays.slice();
 
       const searchPromises = randDays.map(dayStr => {
         const dayStart = new Date(dayStr + 'T00:00:00Z').toISOString();
@@ -103,7 +114,12 @@ export default async function handler(req, res) {
           query: q,
           resultsPerPage: maxResults,
           publishedAfter: publishedAfter || null,
-          order: order
+          order: order,
+          sampledDates: sampledDates || null
+        },
+        apiInfo: {
+          searchUrl: usedSearchUrl ? usedSearchUrl.split('key=')[0] + 'key=[REDACTED]' : (sampledDates ? `sampled:${sampledDates.join(',')}` : 'unknown'),
+          timestamp: new Date().toISOString()
         }
       });
     }
@@ -122,7 +138,12 @@ export default async function handler(req, res) {
           query: q,
           resultsPerPage: maxResults,
           publishedAfter: publishedAfter || null,
-          order: order
+          order: order,
+          sampledDates: sampledDates || null
+        },
+        apiInfo: {
+          searchUrl: usedSearchUrl ? usedSearchUrl.split('key=')[0] + 'key=[REDACTED]' : (sampledDates ? `sampled:${sampledDates.join(',')}` : 'unknown'),
+          timestamp: new Date().toISOString()
         }
       });
     }
@@ -154,6 +175,7 @@ export default async function handler(req, res) {
         };
       });
 
+      const apiSearchUrl = usedSearchUrl ? usedSearchUrl.split('key=')[0] + 'key=[REDACTED]' : (sampledDates ? `sampled:${sampledDates.join(',')}` : 'unknown');
       return res.status(200).json({
         items: combinedItems,
         videos: combinedItems,
@@ -163,7 +185,12 @@ export default async function handler(req, res) {
           resultsPerPage: searchData.pageInfo?.resultsPerPage || maxResults,
           publishedAfter: publishedAfter || null,
           order: order,
+          sampledDates: sampledDates || null,
           note: 'Statistics unavailable'
+        },
+        apiInfo: {
+          searchUrl: apiSearchUrl,
+          timestamp: new Date().toISOString()
         }
       });
     }
@@ -211,6 +238,7 @@ export default async function handler(req, res) {
     }
 
     // STEP 6: Return enriched data with full compatibility
+    const apiSearchUrlFinal = usedSearchUrl ? usedSearchUrl.split('key=')[0] + 'key=[REDACTED]' : (sampledDates ? `sampled:${sampledDates.join(',')}` : 'unknown');
     return res.status(200).json({
       items: filteredItems,
       videos: filteredItems,  // Same data, different field name for compatibility
@@ -222,10 +250,11 @@ export default async function handler(req, res) {
         publishedAfter: publishedAfter || null,
         order: order,
         totalAvailable: searchData.pageInfo?.totalResults || 0,
-        dateFilterApplied: !!publishedAfter
+        dateFilterApplied: !!publishedAfter,
+        sampledDates: sampledDates || null
       },
       apiInfo: {
-        searchUrl: searchUrl.split('key=')[0] + 'key=[REDACTED]', // For debugging without exposing API key
+        searchUrl: apiSearchUrlFinal,
         videosUrl: videosUrl.split('key=')[0] + 'key=[REDACTED]',
         timestamp: new Date().toISOString()
       }
