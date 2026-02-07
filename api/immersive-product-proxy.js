@@ -26,7 +26,8 @@ export default async function handler(req, res) {
     }
 
     // Ensure required SerpApi params
-    params.set('engine', 'google_immersive_product');
+    // Note: google_immersive_product frequently requires page_token. Use google_shopping as a stable fallback.
+    params.set('engine', 'google_shopping');
     params.set('q', keyword);
     params.set('gl', country);
     params.set('hl', params.get('hl') || 'en');
@@ -36,14 +37,29 @@ export default async function handler(req, res) {
     params.delete('keyword');
     params.delete('country');
 
-    const response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+    let response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
       }
     });
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // If SerpApi returns a page_token error, retry with google_shopping
+    if (!response.ok && data?.error && String(data.error).toLowerCase().includes('page_token')) {
+      params.set('engine', 'google_shopping');
+      params.delete('page_token');
+
+      response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      data = await response.json();
+    }
+
     return res.status(response.status).json(data);
   } catch (error) {
     console.error('Immersive Product API error:', error);
