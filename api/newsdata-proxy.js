@@ -69,9 +69,6 @@ export default async function handler(req, res) {
     // Force Google News engine and attach API key
     params.set('engine', 'google_news');
     params.set('api_key', SERP_API_KEY);
-    if (!params.has('hl')) {
-      params.set('hl', 'en');
-    }
     if (!params.has('gl')) {
       params.set('gl', 'us');
     }
