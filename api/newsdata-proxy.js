@@ -72,6 +72,9 @@ export default async function handler(req, res) {
     if (!params.has('hl')) {
       params.set('hl', 'en');
     }
+    if (!params.has('gl')) {
+      params.set('gl', 'us');
+    }
 
     const url = `https://serpapi.com/search?${params.toString()}`;
 
