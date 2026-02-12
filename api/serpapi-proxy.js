@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const apiKeys = [
     process.env.SERPAPI_KEY,
     process.env.SERPAPI_KEY_2
-  ].filter(Boolean); // Remove any undefined/null keys
+  ].filter(Boolean);
 
   if (apiKeys.length === 0) {
     return res.status(500).json({ error: 'No SerpAPI keys configured' });
@@ -29,7 +29,6 @@ export default async function handler(req, res) {
   // Try each API key in sequence
   for (const apiKey of apiKeys) {
     try {
-      // Create a fresh copy of params for each attempt
       const requestParams = new URLSearchParams(params);
       requestParams.append('api_key', apiKey);
 
@@ -42,13 +41,37 @@ export default async function handler(req, res) {
 
       const data = await response.json();
       
-      // If request was successful, return the response
+      // Check if SerpAPI returned an error that should trigger failover
+      if (data.error) {
+        const errorMsg = data.error.toLowerCase();
+        
+        // Detect various API key issues, quota exhaustion, and rate limiting
+        if (
+          errorMsg.includes('invalid api key') ||
+          errorMsg.includes('api key not found') ||
+          errorMsg.includes('unauthorized') ||
+          errorMsg.includes('run out of searches') ||
+          errorMsg.includes('quota') ||
+          errorMsg.includes('exceeded') ||
+          errorMsg.includes('rate limit') ||
+          errorMsg.includes('too many requests') ||
+          response.status === 401 ||
+          response.status === 403 ||
+          response.status === 429
+        ) {
+          console.error(`SERP API error with key ${apiKey.slice(0, 8)}...: ${data.error}`);
+          lastError = new Error(data.error);
+          continue; // Try next key
+        }
+      }
+      
+      // If we get here, request was successful
       return res.status(response.status).json(data);
       
     } catch (error) {
-      console.error(`SERP API error with key ${apiKey.slice(0, 8)}...:`, error.message);
+      console.error(`SERP API network error with key ${apiKey.slice(0, 8)}...:`, error.message);
       lastError = error;
-      // Continue to next key
+      continue; // Try next key
     }
   }
 
