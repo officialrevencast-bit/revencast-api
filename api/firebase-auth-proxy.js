@@ -15,14 +15,48 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { email, password, returnSecureToken = true } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const { email, password, returnSecureToken = true, requestType } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
     }
 
     const apiKey = process.env.FIREBASE_WEB_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'FIREBASE_WEB_API_KEY not configured' });
+    }
+
+    // Forgot password flow
+    if (requestType === 'PASSWORD_RESET') {
+      const resetResponse = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestType: 'PASSWORD_RESET',
+            email
+          })
+        }
+      );
+
+      const resetData = await resetResponse.json();
+      if (!resetResponse.ok) {
+        return res.status(resetResponse.status).json({
+          error: 'Firebase Password Reset error',
+          details: resetData?.error?.message || 'Unable to send reset email'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Password reset email sent',
+        email
+      });
+    }
+
+    // Login flow
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     const response = await fetch(
