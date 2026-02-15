@@ -47,18 +47,19 @@ async function getRedditAppToken() {
 }
 
 export default async function handler(req, res) {
+  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
+  const incomingSecret = req.headers["x-internal-secret"];
+  if (!internalSecret || incomingSecret !== internalSecret) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-License-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-License-Key, X-Internal-Secret");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
-  }
-
-  const licenseKey = req.headers["x-license-key"];
-  if (!licenseKey) {
-    return res.status(401).json({ error: "License key required" });
   }
 
   try {
