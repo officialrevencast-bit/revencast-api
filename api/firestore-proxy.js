@@ -21,11 +21,7 @@ try {
 export default async function handler(req, res) {
   const internalSecret = process.env.INTERNAL_PROXY_SECRET;
   const incomingSecret = req.headers['x-internal-secret'];
-  const licenseKey = req.headers['x-license-key'];
-  const expectedLicense = process.env.REVENCAST_API_KEY;
-  const hasInternalAuth = !!internalSecret && incomingSecret === internalSecret;
-  const hasLegacyAuth = !!expectedLicense && licenseKey === expectedLicense;
-  if (!hasInternalAuth && !hasLegacyAuth) {
+  if (!internalSecret || incomingSecret !== internalSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -52,7 +48,7 @@ export default async function handler(req, res) {
     await testRef.set({
       test: 'connection_test',
       timestamp: new Date().toISOString(),
-      licenseKey: licenseKey
+      auth: 'internal-secret'
     }, { merge: true });
 
     const doc = await testRef.get();
