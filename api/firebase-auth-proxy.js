@@ -1,32 +1,60 @@
-export default async function handler(req, res) {
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (!internalSecret || incomingSecret !== internalSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+import { setCors } from './_auth-utils.js';
 
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Internal-Secret');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
+
+function logError(...args) {
+  if (DEBUG_LOGS) console.error(...args);
+}
+
+export default async function handler(req, res) {
+  setCors(res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   try {
-    const { email, password, returnSecureToken = true, requestType } = req.body || {};
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
+    const { email, password, returnSecureToken = true, requestType, refreshToken } = req.body || {};
 
     const apiKey = process.env.FIREBASE_WEB_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'FIREBASE_WEB_API_KEY not configured' });
     }
 
+    // Refresh token flow
+    if (requestType === 'REFRESH_TOKEN') {
+      if (!refreshToken) {
+        return res.status(400).json({ error: 'refreshToken is required' });
+      }
+
+      const refreshResponse = await fetch(
+        `https://securetoken.googleapis.com/v1/token?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken
+          }).toString()
+        }
+      );
+
+      const refreshData = await refreshResponse.json();
+      if (!refreshResponse.ok) {
+        return res.status(refreshResponse.status).json({
+          error: 'Firebase token refresh error',
+          details: refreshData?.error?.message || 'Unable to refresh token'
+        });
+      }
+
+      return res.status(200).json(refreshData);
+    }
+
     // Forgot password flow
     if (requestType === 'PASSWORD_RESET') {
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
       const resetResponse = await fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
         {
@@ -55,6 +83,9 @@ export default async function handler(req, res) {
     }
 
     // Login flow
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
     if (!password) {
       return res.status(400).json({ error: 'Password is required' });
     }
@@ -78,7 +109,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json(data);
   } catch (error) {
-    console.error('Firebase Auth proxy error:', error);
+    logError('Firebase Auth proxy error:', error);
     return res.status(500).json({
       error: 'Firebase Auth proxy failed',
       details: error.message

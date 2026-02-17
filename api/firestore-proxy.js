@@ -1,5 +1,6 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { authorizeRequest, setCors } from './_auth-utils.js';
 
 const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
 
@@ -45,20 +46,25 @@ function userSimulationsCollection(userId) {
   return db.collection('simulations').doc(userId).collection('user_simulations');
 }
 
-export default async function handler(req, res) {
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (!internalSecret || incomingSecret !== internalSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
+function enforceUserScope(authContext, userId, res) {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) {
+    return res.status(400).json({ error: 'user_id is required' });
   }
+  if (authContext.mode === 'bearer' && normalizedUserId !== authContext.uid) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  return null;
+}
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Internal-Secret');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+export default async function handler(req, res) {
+  setCors(res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+  const authContext = await authorizeRequest(req, res);
+  if (!authContext || !authContext.ok) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -83,7 +89,8 @@ export default async function handler(req, res) {
 
     if (action === 'get_user') {
       const userId = String(req.body?.user_id || '').trim();
-      if (!userId) return res.status(400).json({ error: 'user_id is required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
       const doc = await db.collection('Users').doc(userId).get();
       return res.status(200).json({ exists: doc.exists, data: doc.exists ? doc.data() : {} });
     }
@@ -91,7 +98,8 @@ export default async function handler(req, res) {
     if (action === 'update_user') {
       const userId = String(req.body?.user_id || '').trim();
       const updates = req.body?.updates;
-      if (!userId) return res.status(400).json({ error: 'user_id is required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
       if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates object is required' });
       await db.collection('Users').doc(userId).set(decodeSentinels(updates), { merge: true });
       return res.status(200).json({ success: true });
@@ -100,7 +108,8 @@ export default async function handler(req, res) {
     if (action === 'get_active_subscription') {
       const userId = String(req.body?.user_id || '').trim();
       const subscriptionId = String(req.body?.subscription_id || '').trim();
-      if (!userId) return res.status(400).json({ error: 'user_id is required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
 
       let subscription = {};
       if (subscriptionId) {
@@ -124,7 +133,8 @@ export default async function handler(req, res) {
 
     if (action === 'list_user_simulation_docs') {
       const userId = String(req.body?.user_id || '').trim();
-      if (!userId) return res.status(400).json({ error: 'user_id is required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
 
       const snapshot = await userSimulationsCollection(userId).get();
       const docs = snapshot.docs.map((doc) => ({ id: doc.id, data: doc.data() || {} }));
@@ -134,7 +144,9 @@ export default async function handler(req, res) {
     if (action === 'get_simulation_doc') {
       const userId = String(req.body?.user_id || '').trim();
       const docId = String(req.body?.doc_id || '').trim();
-      if (!userId || !docId) return res.status(400).json({ error: 'user_id and doc_id are required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
+      if (!docId) return res.status(400).json({ error: 'user_id and doc_id are required' });
 
       const doc = await userSimulationsCollection(userId).doc(docId).get();
       return res.status(200).json({ exists: doc.exists, data: doc.exists ? doc.data() : {} });
@@ -145,7 +157,9 @@ export default async function handler(req, res) {
       const docId = String(req.body?.doc_id || '').trim();
       const merge = Boolean(req.body?.merge);
       const data = req.body?.data;
-      if (!userId || !docId) return res.status(400).json({ error: 'user_id and doc_id are required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
+      if (!docId) return res.status(400).json({ error: 'user_id and doc_id are required' });
       if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object is required' });
 
       await userSimulationsCollection(userId).doc(docId).set(decodeSentinels(data), { merge });
@@ -155,7 +169,8 @@ export default async function handler(req, res) {
     if (action === 'set_simulation_docs_batch') {
       const userId = String(req.body?.user_id || '').trim();
       const docs = Array.isArray(req.body?.docs) ? req.body.docs : null;
-      if (!userId) return res.status(400).json({ error: 'user_id is required' });
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
       if (!docs || docs.length === 0) return res.status(400).json({ error: 'docs array is required' });
 
       const batch = db.batch();

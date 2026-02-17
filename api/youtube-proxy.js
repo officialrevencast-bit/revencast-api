@@ -1,18 +1,27 @@
-export default async function handler(req, res) {
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (!internalSecret || incomingSecret !== internalSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+import { authorizeRequest, setCors } from './_auth-utils.js';
 
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Internal-Secret');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
+
+function logDebug(...args) {
+  if (DEBUG_LOGS) console.log(...args);
+}
+
+function logWarn(...args) {
+  if (DEBUG_LOGS) console.warn(...args);
+}
+
+function logError(...args) {
+  if (DEBUG_LOGS) console.error(...args);
+}
+
+export default async function handler(req, res) {
+  setCors(res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+  const auth = await authorizeRequest(req, res);
+  if (!auth || !auth.ok) return;
 
   try {
     const { q, maxResults = 10, type = 'video', part = 'snippet', publishedAfter, order = 'date' } = req.body;
@@ -37,9 +46,9 @@ export default async function handler(req, res) {
     // Add order parameter (default to 'date' for most recent)
     searchUrl += `&order=${order}`;
     
-    console.log(`YouTube API Call: ${searchUrl}`);
+    logDebug(`YouTube API Call: ${searchUrl}`);
     if (publishedAfter) {
-      console.log(`Filtering videos published after: ${publishedAfter}`);
+      logDebug(`Filtering videos published after: ${publishedAfter}`);
     }
     
     const searchResponse = await fetch(searchUrl);
@@ -47,7 +56,7 @@ export default async function handler(req, res) {
 
     // Check for API errors
     if (searchData.error) {
-      console.error('YouTube API error:', searchData.error);
+      logError('YouTube API error:', searchData.error);
       return res.status(500).json({ 
         error: 'YouTube API error',
         details: searchData.error.message || 'Unknown API error'
@@ -95,7 +104,7 @@ export default async function handler(req, res) {
 
     // Check for API errors in videos endpoint
     if (videosData.error) {
-      console.error('YouTube Videos API error:', videosData.error);
+      logError('YouTube Videos API error:', videosData.error);
       // Still return search results without statistics
       const combinedItems = searchData.items.map(searchItem => {
         const videoId = searchItem.id.videoId;
@@ -162,12 +171,12 @@ export default async function handler(req, res) {
           return publishedDate >= filterDate;
         } catch (e) {
           // If date parsing fails, include the item
-          console.warn(`Failed to parse date: ${item.publishedAt}`);
+          logWarn(`Failed to parse date: ${item.publishedAt}`);
           return true;
         }
       });
       
-      console.log(`Date filtering: ${combinedItems.length} total, ${filteredItems.length} after ${publishedAfter}`);
+      logDebug(`Date filtering: ${combinedItems.length} total, ${filteredItems.length} after ${publishedAfter}`);
     }
 
     // STEP 6: Return enriched data with full compatibility
@@ -192,7 +201,7 @@ export default async function handler(req, res) {
     });
     
   } catch (error) {
-    console.error('YouTube API error:', error);
+    logError('YouTube API error:', error);
     return res.status(500).json({ 
       error: 'YouTube API error',
       details: error.message,

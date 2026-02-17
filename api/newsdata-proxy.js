@@ -1,19 +1,20 @@
 // newsdata-proxy.js
-export default async function handler(req, res) {
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (!internalSecret || incomingSecret !== internalSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+import { authorizeRequest, setCors } from './_auth-utils.js';
 
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Internal-Secret');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
+
+function logError(...args) {
+  if (DEBUG_LOGS) console.error(...args);
+}
+
+export default async function handler(req, res) {
+  setCors(res, 'GET, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+  const auth = await authorizeRequest(req, res);
+  if (!auth || !auth.ok) return;
 
   const apiKeys = [
     process.env.SERPAPI_KEY,
@@ -130,7 +131,7 @@ export default async function handler(req, res) {
 
         if (shouldFailover(response.status, data)) {
           const reason = errorMessage || `HTTP ${response.status}`;
-          console.error(`Google News failover with key ${apiKey.slice(0, 8)}...: ${reason}`);
+          logError(`Google News failover with key ${apiKey.slice(0, 8)}...: ${reason}`);
           lastError = new Error(reason);
           continue;
         }
@@ -141,7 +142,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json(data);
       } catch (error) {
-        console.error(`Google News network error with key ${apiKey.slice(0, 8)}...:`, error.message);
+        logError(`Google News network error with key ${apiKey.slice(0, 8)}...:`, error.message);
         lastError = error;
         continue;
       }
@@ -153,7 +154,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Google News (SerpApi) error:', error);
+    logError('Google News (SerpApi) error:', error);
     return res.status(500).json({
       error: 'Google News API error',
       details: error.message

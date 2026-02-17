@@ -1,18 +1,19 @@
-export default async function handler(req, res) {
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (!internalSecret || incomingSecret !== internalSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+import { authorizeRequest, setCors } from './_auth-utils.js';
 
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-License-Key, X-Internal-Secret');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
+
+function logError(...args) {
+  if (DEBUG_LOGS) console.error(...args);
+}
+
+export default async function handler(req, res) {
+  setCors(res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+  const auth = await authorizeRequest(req, res);
+  if (!auth || !auth.ok) return;
 
   try {
     const { messages, model = "gpt-4", max_tokens = 1000, temperature = 0.7 } = req.body;
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
     return res.status(response.status).json(data);
     
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    logError('OpenAI API error:', error);
     return res.status(500).json({ 
       error: 'Failed to get AI response',
       details: error.message 
