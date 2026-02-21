@@ -1,5 +1,5 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { authorizeRequest, setCors } from './_auth-utils.js';
 
 const DEBUG_LOGS = String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' || process.env.APP_DEBUG_LOGS === '1';
@@ -167,6 +167,63 @@ export default async function handler(req, res) {
       const snapshot = await userSimulationsCollection(userId).get();
       const docs = snapshot.docs.map((doc) => ({ id: doc.id, data: doc.data() || {} }));
       return res.status(200).json({ docs });
+    }
+
+    if (action === 'list_user_simulation_summaries_paginated') {
+      const userId = String(req.body?.user_id || '').trim();
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
+
+      let limit = Number(req.body?.limit ?? 24);
+      if (!Number.isFinite(limit)) limit = 24;
+      limit = Math.max(1, Math.min(100, Math.floor(limit)));
+      const cursor = String(req.body?.cursor || '').trim();
+
+      const batchSize = Math.max(limit * 8, 80);
+      let query = userSimulationsCollection(userId)
+        .orderBy(FieldPath.documentId(), 'desc')
+        .limit(Math.min(batchSize, 300));
+
+      if (cursor) {
+        query = query.startAfter(cursor);
+      }
+
+      const snapshot = await query.get();
+      const summaries = [];
+      let lastRawDocId = cursor || '';
+      let lastIncludedRawDocId = '';
+
+      for (const doc of snapshot.docs) {
+        const docId = doc.id || '';
+        const docData = doc.data() || {};
+        lastRawDocId = docId;
+
+        const isAuxDoc =
+          docId.endsWith('_input') ||
+          docId.endsWith('_output') ||
+          docId.endsWith('_raw_api') ||
+          docId.endsWith('_pdf_data');
+        if (isAuxDoc) continue;
+
+        const includeDoc =
+          docData.data_type === 'summary' ||
+          Object.prototype.hasOwnProperty.call(docData, 'simulation_id') ||
+          Object.prototype.hasOwnProperty.call(docData, 'product_name');
+        if (!includeDoc) continue;
+
+        summaries.push({ id: docId, data: docData });
+        lastIncludedRawDocId = docId;
+        if (summaries.length >= limit) break;
+      }
+
+      const hasMore = snapshot.size >= Math.min(batchSize, 300) || (summaries.length >= limit && !!lastRawDocId);
+      const nextCursor = hasMore ? (lastIncludedRawDocId || lastRawDocId) : '';
+
+      return res.status(200).json({
+        docs: summaries,
+        has_more: Boolean(hasMore && nextCursor),
+        next_cursor: nextCursor
+      });
     }
 
     if (action === 'get_simulation_doc') {
