@@ -46,6 +46,34 @@ function userSimulationsCollection(userId) {
   return db.collection('simulations').doc(userId).collection('user_simulations');
 }
 
+function toMillis(value) {
+  if (!value) return null;
+  try {
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    if (typeof value === 'number') return value > 1e12 ? value : value * 1000;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^\d+$/.test(trimmed)) {
+        const n = Number(trimmed);
+        return n > 1e12 ? n : n * 1000;
+      }
+      const parsed = Date.parse(trimmed);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    if (typeof value === 'object') {
+      const seconds = value.seconds ?? value._seconds ?? value.timestamp ?? value.value;
+      if (seconds !== undefined && seconds !== null) {
+        const n = Number(seconds);
+        if (!Number.isNaN(n)) return n > 1e12 ? n : n * 1000;
+      }
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
 function enforceUserScope(authContext, userId, res) {
   const normalizedUserId = String(userId || '').trim();
   if (!normalizedUserId) {
@@ -186,6 +214,104 @@ export default async function handler(req, res) {
       }
       await batch.commit();
       return res.status(200).json({ success: true, count: docs.length });
+    }
+
+    if (action === 'consume_credit_for_simulation') {
+      const userId = String(req.body?.user_id || '').trim();
+      const simulationId = String(req.body?.simulation_id || '').trim();
+      const runId = String(req.body?.run_id || simulationId || '').trim();
+      const scopeError = enforceUserScope(authContext, userId, res);
+      if (scopeError) return scopeError;
+      if (!simulationId) return res.status(400).json({ error: 'simulation_id is required' });
+      if (!runId) return res.status(400).json({ error: 'run_id is required' });
+
+      const userRef = db.collection('Users').doc(userId);
+      const consumeRef = db.collection('CreditConsumptions').doc(`${userId}_${runId}`);
+
+      const result = await db.runTransaction(async (tx) => {
+        const existingConsumeSnap = await tx.get(consumeRef);
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw new Error('User not found');
+        const userData = userSnap.data() || {};
+
+        const currentBalance = Number(userData.creditsBalance || 0);
+        const accountStatus = String(userData.accountStatus || 'active').toLowerCase();
+
+        if (existingConsumeSnap.exists) {
+          return {
+            success: true,
+            deduplicated: true,
+            creditsBalance: currentBalance,
+            simulationId,
+            runId
+          };
+        }
+
+        if (accountStatus !== 'active') {
+          throw new Error('Account is not active');
+        }
+        if (!Number.isFinite(currentBalance) || currentBalance <= 0) {
+          throw new Error('No credits available');
+        }
+
+        const grants = Array.isArray(userData.creditGrants) ? userData.creditGrants.map(g => ({ ...(g || {}) })) : [];
+        const now = Date.now();
+
+        const candidates = grants
+          .map((grant, index) => {
+            const remaining = Number(grant.remainingCredits || 0);
+            const expiresAtMs = toMillis(grant.expiresAt);
+            const validByExpiry = expiresAtMs === null || expiresAtMs > now;
+            return { grant, index, remaining, expiresAtMs, validByExpiry };
+          })
+          .filter(item => item.remaining > 0 && item.validByExpiry)
+          .sort((a, b) => {
+            const ae = a.expiresAtMs === null ? Number.MAX_SAFE_INTEGER : a.expiresAtMs;
+            const be = b.expiresAtMs === null ? Number.MAX_SAFE_INTEGER : b.expiresAtMs;
+            return ae - be;
+          });
+
+        if (!candidates.length) {
+          throw new Error('No valid credits available');
+        }
+
+        const selected = candidates[0];
+        const before = Number(selected.grant.remainingCredits || 0);
+        selected.grant.remainingCredits = Math.max(0, before - 1);
+        grants[selected.index] = selected.grant;
+        const nextBalance = Math.max(0, currentBalance - 1);
+
+        tx.update(userRef, {
+          creditGrants: grants,
+          creditsBalance: nextBalance,
+          creditsLastUpdated: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        });
+
+        tx.set(consumeRef, {
+          firebaseUid: userId,
+          simulationId,
+          runId,
+          consumedCredits: 1,
+          createdAt: FieldValue.serverTimestamp(),
+          grantIndex: selected.index,
+          grantPackage: selected.grant.package || '',
+          grantPurchaseId: selected.grant.purchaseId || '',
+          balanceBefore: currentBalance,
+          balanceAfter: nextBalance
+        });
+
+        return {
+          success: true,
+          deduplicated: false,
+          creditsBalance: nextBalance,
+          simulationId,
+          runId,
+          grantIndex: selected.index
+        };
+      });
+
+      return res.status(200).json(result);
     }
 
     return res.status(400).json({ error: 'Unsupported action' });
