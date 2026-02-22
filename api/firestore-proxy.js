@@ -292,6 +292,7 @@ export default async function handler(req, res) {
         const userData = userSnap.data() || {};
 
         const currentBalance = Number(userData.creditsBalance || 0);
+        const currentSimulationCount = Number(userData.simulation_count || 0);
         const accountStatus = String(userData.accountStatus || 'active').toLowerCase();
 
         if (existingConsumeSnap.exists) {
@@ -299,6 +300,7 @@ export default async function handler(req, res) {
             success: true,
             deduplicated: true,
             creditsBalance: currentBalance,
+            simulationCount: currentSimulationCount,
             simulationId,
             runId
           };
@@ -337,10 +339,12 @@ export default async function handler(req, res) {
         selected.grant.remainingCredits = Math.max(0, before - 1);
         grants[selected.index] = selected.grant;
         const nextBalance = Math.max(0, currentBalance - 1);
+        const nextSimulationCount = Math.max(0, currentSimulationCount + 1);
 
         tx.update(userRef, {
           creditGrants: grants,
           creditsBalance: nextBalance,
+          simulation_count: nextSimulationCount,
           creditsLastUpdated: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
         });
@@ -362,6 +366,7 @@ export default async function handler(req, res) {
           success: true,
           deduplicated: false,
           creditsBalance: nextBalance,
+          simulationCount: nextSimulationCount,
           simulationId,
           runId,
           grantIndex: selected.index
