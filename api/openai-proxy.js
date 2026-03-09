@@ -16,20 +16,41 @@ export default async function handler(req, res) {
   if (!auth || !auth.ok) return;
 
   try {
-    const { messages, model = "gpt-4", max_tokens = 1000, temperature = 0.7 } = req.body;
+    const {
+      api = 'chat_completions',
+      messages,
+      model = "gpt-4.1-mini",
+      max_tokens = 1000,
+      max_output_tokens = 1000,
+      temperature = 0.7,
+      input
+    } = req.body || {};
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const isResponsesApi = api === 'responses' || (!!input && !messages);
+    const endpoint = isResponsesApi
+      ? 'https://api.openai.com/v1/responses'
+      : 'https://api.openai.com/v1/chat/completions';
+    const body = isResponsesApi
+      ? {
+          model,
+          input: input || '',
+          temperature,
+          max_output_tokens
+        }
+      : {
+          model,
+          messages,
+          max_tokens,
+          temperature
+        };
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens,
-        temperature
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
