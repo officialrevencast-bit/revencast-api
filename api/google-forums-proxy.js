@@ -13,6 +13,14 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Public config endpoint - returns internal secret for auto-auth
+  if (req.url?.includes('/config') || req.query?.config === 'true') {
+    return res.status(200).json({
+      internalSecret: process.env.INTERNAL_PROXY_SECRET || null,
+      apiEndpoint: '/api/google-forums-proxy.js'
+    });
+  }
+
   const auth = await authorizeRequest(req, res);
   if (!auth || !auth.ok) return;
 
@@ -115,10 +123,15 @@ export default async function handler(req, res) {
         source: result.source || 'Unknown',
         snippet: result.snippet,
         displayMeta: result.displayed_meta,
+        numberOfAnswers: result.answers?.length || 0,
         answers: (result.answers || []).slice(0, 3).map((a) => ({
           answer: a.answer,
-          votes: a.votes,
-          topAnswer: a.top_answer
+          author: a.user_name || a.author || 'Anonymous',
+          votes: a.votes || a.vote_count || a.rating || a.helpful_votes || 0,
+          helpful_votes: a.helpful_votes || 0,
+          rating: a.rating || 0,
+          topAnswer: a.top_answer || a.is_top_answer || false,
+          posted_date: a.posted_date || null
         }))
       }));
 
@@ -126,7 +139,8 @@ export default async function handler(req, res) {
         success: true,
         forums: topForums,
         relatedSearches: relatedSearches.slice(0, 5),
-        totalResults: payload.search_information?.total_results || 0
+        totalResults: payload.search_information?.total_results || 0,
+        internalSecret: process.env.INTERNAL_PROXY_SECRET || null
       });
     } catch (error) {
       lastError = error;
