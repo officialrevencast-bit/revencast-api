@@ -1,4 +1,8 @@
-import { authorizeRequest, setCors } from './_auth-utils.js';
+'use strict';
+
+// NOTE: This function is intentionally CommonJS-compatible (no top-level `import` / `export`).
+// Vercel may execute `/api/*.js` as CommonJS unless the project is configured as ESM.
+// We use dynamic `import()` to load shared helpers in both ESM and CJS deployments.
 
 const DEBUG_LOGS =
   String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' ||
@@ -8,7 +12,9 @@ function logError(...args) {
   if (DEBUG_LOGS) console.error(...args);
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  const { authorizeRequest, setCors } = await import('./_auth-utils.js');
+
   setCors(res, 'GET, POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
@@ -25,7 +31,9 @@ export default async function handler(req, res) {
 
   const incoming =
     req.method === 'POST'
-      ? new URLSearchParams(Object.entries(req.body || {}).flatMap(([k, v]) => (v == null ? [] : [[k, String(v)]])))
+      ? new URLSearchParams(
+          Object.entries(req.body || {}).flatMap(([k, v]) => (v == null ? [] : [[k, String(v)]]))
+        )
       : new URLSearchParams(req.query);
 
   const engine = incoming.get('engine');
@@ -93,10 +101,9 @@ export default async function handler(req, res) {
       });
 
       const data = await parseResponseBody(response);
-      const errorMessage = getSerpErrorMessage(data);
 
       if (shouldFailover(response.status, data)) {
-        const reason = errorMessage || `HTTP ${response.status}`;
+        const reason = getSerpErrorMessage(data) || `HTTP ${response.status}`;
         logError(`Google AI Mode failover with key ${apiKey.slice(0, 8)}...: ${reason}`);
         lastError = new Error(reason);
         continue;
@@ -120,4 +127,7 @@ export default async function handler(req, res) {
     details: lastError?.message || 'Unknown error'
   });
 }
+
+module.exports = handler;
+module.exports.config = { runtime: 'nodejs' };
 
