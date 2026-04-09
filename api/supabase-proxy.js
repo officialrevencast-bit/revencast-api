@@ -1,5 +1,7 @@
 import { authorizeRequest, setCors } from './_auth-utils.js';
 
+export const config = { runtime: 'nodejs' };
+
 const DEBUG_LOGS =
   String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' ||
   process.env.APP_DEBUG_LOGS === '1';
@@ -33,11 +35,20 @@ async function parseJsonSafe(response) {
 export default async function handler(req, res) {
   // Always set CORS headers early. If the function crashes before a response is sent,
   // the platform may return a default 500 without these headers (causing CORS failures).
-  setCors(res, 'POST, OPTIONS');
+  setCors(res, 'GET, POST, OPTIONS');
 
   try {
     if (req.method === 'OPTIONS') {
       return res.status(200).end();
+    }
+
+    // Lightweight health check (no auth). Useful for confirming the function is deployed and not crashing.
+    if (req.method === 'GET') {
+      return res.status(200).json({
+        ok: true,
+        service: 'supabase-proxy',
+        ts: new Date().toISOString()
+      });
     }
 
     const auth = await authorizeRequest(req, res);
@@ -178,7 +189,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unknown action' });
   } catch (err) {
     // Ensure CORS headers are present even in unexpected error paths.
-    setCors(res, 'POST, OPTIONS');
+    setCors(res, 'GET, POST, OPTIONS');
     logError('Supabase proxy error:', err);
     return res.status(500).json({ error: 'Supabase proxy error', details: err?.message || 'Unknown error' });
   }
