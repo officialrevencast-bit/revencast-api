@@ -31,30 +31,32 @@ async function parseJsonSafe(response) {
 }
 
 export default async function handler(req, res) {
+  // Always set CORS headers early. If the function crashes before a response is sent,
+  // the platform may return a default 500 without these headers (causing CORS failures).
   setCors(res, 'POST, OPTIONS');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  const auth = await authorizeRequest(req, res);
-  if (!auth || !auth.ok) return;
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const SUPABASE_URL = getEnv('SUPABASE_URL');
-  const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return res.status(500).json({
-      error: 'Supabase not configured',
-      details: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set'
-    });
-  }
-
   try {
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    const auth = await authorizeRequest(req, res);
+    if (!auth || !auth.ok) return;
+
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const SUPABASE_URL = getEnv('SUPABASE_URL');
+    const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({
+        error: 'Supabase not configured',
+        details: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set'
+      });
+    }
+
     const { action } = req.body || {};
     if (!action) return res.status(400).json({ error: 'Missing action' });
 
@@ -175,8 +177,9 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: 'Unknown action' });
   } catch (err) {
+    // Ensure CORS headers are present even in unexpected error paths.
+    setCors(res, 'POST, OPTIONS');
     logError('Supabase proxy error:', err);
     return res.status(500).json({ error: 'Supabase proxy error', details: err?.message || 'Unknown error' });
   }
 }
-
