@@ -101,7 +101,8 @@ async function handler(req, res) {
         merged_json: req.body?.merged_json ?? null,
         call1_raw: req.body?.call1_raw ?? null,
         call2_raw: req.body?.call2_raw ?? null,
-        references: req.body?.references ?? null
+        // Column name in Supabase is `references_json` (since `references` is a reserved keyword in Postgres).
+        references_json: req.body?.references ?? null
       };
 
       const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
