@@ -1,6 +1,8 @@
-import { authorizeRequest, setCors } from './_auth-utils.js';
+'use strict';
 
-export const config = { runtime: 'nodejs' };
+// NOTE: This function is intentionally CommonJS-compatible (no top-level `import` / `export`).
+// Vercel may execute `/api/*.js` as CommonJS unless the project is configured as ESM.
+// We use dynamic `import()` to load shared helpers in both ESM and CJS deployments.
 
 const DEBUG_LOGS =
   String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' ||
@@ -32,7 +34,9 @@ async function parseJsonSafe(response) {
   }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  const { authorizeRequest, setCors } = await import('./_auth-utils.js');
+
   // Always set CORS headers early. If the function crashes before a response is sent,
   // the platform may return a default 500 without these headers (causing CORS failures).
   setCors(res, 'GET, POST, OPTIONS');
@@ -100,7 +104,7 @@ export default async function handler(req, res) {
         references: req.body?.references ?? null
       };
 
-      const response = await fetch(`${SUPABASE_URL.replace(/\\/+$/, '')}/rest/v1/reports`, {
+      const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
         method: 'POST',
         headers: {
           ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY),
@@ -130,7 +134,7 @@ export default async function handler(req, res) {
       const reportId = String(req.body?.report_id || '').trim();
       if (!reportId) return res.status(400).json({ error: 'report_id is required' });
 
-      const url = `${SUPABASE_URL.replace(/\\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(
+      const url = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(
         reportId
       )}&select=*`;
 
@@ -162,7 +166,7 @@ export default async function handler(req, res) {
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.floor(limitRaw))) : 20;
       const cursor = String(req.body?.cursor || '').trim(); // cursor is ISO date string for created_at
 
-      const base = `${SUPABASE_URL.replace(/\\/+$/, '')}/rest/v1/reports?select=id,idea_name,target_country,created_at,status&user_id=eq.${encodeURIComponent(
+      const base = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?select=id,idea_name,target_country,created_at,status&user_id=eq.${encodeURIComponent(
         auth.uid
       )}&order=created_at.desc&limit=${limit}`;
       const withCursor = cursor ? `${base}&created_at=lt.${encodeURIComponent(cursor)}` : base;
@@ -194,3 +198,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Supabase proxy error', details: err?.message || 'Unknown error' });
   }
 }
+
+module.exports = handler;
+module.exports.config = { runtime: 'nodejs' };
