@@ -37,38 +37,47 @@ export function setCors(res, methods = 'GET, POST, OPTIONS') {
 }
 
 export async function authorizeRequest(req, res, options = {}) {
-  const {
-    allowInternalSecret = true,
-    allowBearer = true,
-    allowAnonymous = false
-  } = options;
+  try {
+    const {
+      allowInternalSecret = true,
+      allowBearer = true,
+      allowAnonymous = false
+    } = options;
 
-  const internalSecret = process.env.INTERNAL_PROXY_SECRET;
-  const incomingSecret = req.headers['x-internal-secret'];
-  if (allowInternalSecret && internalSecret && incomingSecret && incomingSecret === internalSecret) {
-    return { ok: true, mode: 'internal', uid: '' };
-  }
+    const internalSecret = process.env.INTERNAL_PROXY_SECRET;
+    const incomingSecret = req.headers['x-internal-secret'];
+    if (allowInternalSecret && internalSecret && incomingSecret && incomingSecret === internalSecret) {
+      return { ok: true, mode: 'internal', uid: '' };
+    }
 
-  if (allowBearer) {
-    const token = getBearerToken(req);
-    if (token) {
-      try {
-        const auth = getFirebaseAuthClient();
-        const decoded = await auth.verifyIdToken(token);
-        const uid = String(decoded.uid || decoded.user_id || decoded.sub || '').trim();
-        if (!uid) {
+    if (allowBearer) {
+      const token = getBearerToken(req);
+      if (token) {
+        try {
+          const auth = getFirebaseAuthClient();
+          const decoded = await auth.verifyIdToken(token);
+          const uid = String(decoded.uid || decoded.user_id || decoded.sub || '').trim();
+          if (!uid) {
+            return res.status(401).json({ error: 'Unauthorized' });
+          }
+          return { ok: true, mode: 'bearer', uid };
+        } catch (_err) {
           return res.status(401).json({ error: 'Unauthorized' });
         }
-        return { ok: true, mode: 'bearer', uid };
-      } catch (_err) {
-        return res.status(401).json({ error: 'Unauthorized' });
       }
     }
-  }
 
-  if (allowAnonymous) {
-    return { ok: true, mode: 'anonymous', uid: '' };
-  }
+    if (allowAnonymous) {
+      return { ok: true, mode: 'anonymous', uid: '' };
+    }
 
-  return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: 'Unauthorized' });
+  } catch (err) {
+    // Most common cause: FIRESTORE_SERVICE_ACCOUNT missing/invalid in the serverless environment.
+    // Avoid leaking any secrets; return a short hint for configuration.
+    return res.status(500).json({
+      error: 'Auth server misconfigured',
+      details: err?.message || 'Unknown error'
+    });
+  }
 }
