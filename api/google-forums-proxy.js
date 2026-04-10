@@ -26,14 +26,44 @@ export default async function handler(req, res) {
   }
 
   const params = new URLSearchParams(req.method === 'POST' ? req.body : req.query);
-  
-  // Ensure engine is google_forums
-  params.set('engine', 'google_forums');
-
   const q = params.get('q');
   if (!q) {
     return res.status(400).json({ error: 'Missing required parameter: q' });
   }
+
+  // SerpApi's Google Forums API does not expose a date filter directly.
+  // We use the Google Search forums/discussions view instead, which supports tbs=qdr:*.
+  const timeRangeRaw = String(params.get('time_range') || 'month').trim().toLowerCase();
+  const timeRangeMap = {
+    day: 'd',
+    week: 'w',
+    month: 'm',
+    year: 'y',
+    '24h': 'd',
+    '7d': 'w',
+    '30d': 'm',
+    '12m': 'y',
+    all: ''
+  };
+  const timeRange = timeRangeMap[timeRangeRaw] ?? timeRangeMap.month;
+  const location = String(params.get('location') || '').trim();
+  const hl = String(params.get('hl') || 'en').trim() || 'en';
+  const gl = String(params.get('gl') || 'us').trim() || 'us';
+  const filter = String(params.get('filter') || '0').trim();
+  const start = String(params.get('start') || '0').trim();
+  const nfpr = String(params.get('nfpr') || '1').trim();
+
+  const baseParams = new URLSearchParams();
+  baseParams.set('engine', 'google');
+  baseParams.set('q', q);
+  baseParams.set('udm', '18');
+  baseParams.set('hl', hl);
+  baseParams.set('gl', gl);
+  baseParams.set('filter', filter || '0');
+  baseParams.set('nfpr', nfpr || '1');
+  if (start) baseParams.set('start', start);
+  if (location) baseParams.set('location', location);
+  if (timeRange) baseParams.set('tbs', `qdr:${timeRange}`);
 
   let lastError = null;
 
@@ -78,45 +108,42 @@ export default async function handler(req, res) {
     }
   };
 
-  const mapAnswer = (answer) => ({
-    link: String(answer?.link || '').trim(),
-    answer: String(answer?.answer || '').trim(),
-    topAnswer: Boolean(answer?.top_answer),
-    votes: Number(answer?.votes || 0)
+  const mapDiscussionItem = (item) => ({
+    snippet: String(item?.snippet || '').trim(),
+    link: String(item?.link || '').trim(),
+    top_answer: Boolean(item?.top_answer),
+    votes: Number(item?.votes || 0)
   });
 
-  const mapSitelink = (sitelink) => ({
-    title: String(sitelink?.title || '').trim(),
-    link: String(sitelink?.link || '').trim(),
-    snippet: String(sitelink?.snippet || '').trim(),
-    answerCount: Number(sitelink?.answer_count || 0),
-    date: String(sitelink?.date || '').trim()
-  });
+  const mapDiscussionForum = (result) => {
+    const items = Array.isArray(result?.items) ? result.items : [];
+    const comments = Number(result?.comments || 0);
+    const extensions = Array.isArray(result?.extensions) ? result.extensions.map((item) => String(item || '').trim()).filter(Boolean) : [];
+    return {
+      position: result.position ?? null,
+      title: String(result.title || '').trim(),
+      link: String(result.link || '').trim(),
+      source: String(result.source || 'Unknown').trim(),
+      date: String(result.date || '').trim(),
+      comments,
+      displayedMeta: [result.source, comments ? `${comments}+ comments` : '', ...extensions].filter(Boolean).join(' • '),
+      snippet: items.length ? String(items[0]?.snippet || '').trim() : '',
+      answers: items.slice(0, 5).map(mapDiscussionItem),
+      icon: String(result.icon || '').trim()
+    };
+  };
 
-  const mapForumResult = (result) => ({
-    position: result.position,
-    title: String(result.title || '').trim(),
-    link: String(result.link || '').trim(),
-    redirectLink: String(result.redirect_link || '').trim(),
-    displayedLink: String(result.displayed_link || '').trim(),
-    displayedMeta: String(result.displayed_meta || '').trim(),
-    date: String(result.date || '').trim(),
-    source: String(result.source || 'Unknown').trim(),
-    snippet: String(result.snippet || '').trim(),
-    snippetHighlightedWords: Array.isArray(result.snippet_highlighted_words) ? result.snippet_highlighted_words : [],
-    favicon: String(result.favicon || '').trim(),
-    aboutThisResult: result.about_this_result || null,
-    sitelinks: {
-      expanded: Array.isArray(result?.sitelinks?.expanded) ? result.sitelinks.expanded.map(mapSitelink) : [],
-      list: Array.isArray(result?.sitelinks?.list) ? result.sitelinks.list.map(mapSitelink) : []
-    },
-    answers: Array.isArray(result.answers) ? result.answers.slice(0, 5).map(mapAnswer) : []
+  const mapRelatedSearch = (item) => ({
+    blockPosition: Number(item?.block_position || 0),
+    query: String(item?.query || '').trim(),
+    link: String(item?.link || '').trim(),
+    serpapiLink: String(item?.serpapi_link || '').trim()
   });
 
   // Try each API key in sequence
   for (const apiKey of apiKeys) {
     try {
-      const requestParams = new URLSearchParams(params);
+      const requestParams = new URLSearchParams(baseParams);
       requestParams.append('api_key', apiKey);
 
       const response = await fetch(`https://serpapi.com/search?${requestParams.toString()}`, {
@@ -138,24 +165,24 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Extract useful forum signals and structure the response
-      const organicResults = payload.organic_results || [];
-      const relatedSearches = payload.related_searches || [];
+      // Extract useful discussion/forum signals and structure the response
+      const discussions = Array.isArray(payload.discussions_and_forums)
+        ? payload.discussions_and_forums
+        : Array.isArray(payload.organic_results)
+          ? payload.organic_results
+          : [];
+      const relatedSearches = Array.isArray(payload.related_searches) ? payload.related_searches : [];
       const pagination = payload.serpapi_pagination || {};
 
-      // Keep the most relevant forum discussions, but preserve the rich metadata for synthesis.
-      const topForums = organicResults.slice(0, 5).map(mapForumResult);
+      // Keep the most relevant discussions, but preserve the rich metadata for synthesis.
+      const topForums = discussions.slice(0, 8).map(mapDiscussionForum);
 
       return res.status(200).json({
         success: true,
         query: String(q),
+        time_range: timeRangeRaw || null,
         forums: topForums,
-        relatedSearches: relatedSearches.slice(0, 5).map((item) => ({
-          blockPosition: Number(item?.block_position || 0),
-          query: String(item?.query || '').trim(),
-          link: String(item?.link || '').trim(),
-          serpapiLink: String(item?.serpapi_link || '').trim()
-        })),
+        relatedSearches: relatedSearches.slice(0, 5).map(mapRelatedSearch),
         totalResults: payload.search_information?.total_results || 0,
         searchInformation: payload.search_information || {},
         pagination: {
