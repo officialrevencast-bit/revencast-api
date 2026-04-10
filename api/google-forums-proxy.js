@@ -13,14 +13,6 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Public config endpoint - returns internal secret for auto-auth
-  if (req.url?.includes('/config') || req.query?.config === 'true') {
-    return res.status(200).json({
-      internalSecret: process.env.INTERNAL_PROXY_SECRET || null,
-      apiEndpoint: '/api/google-forums-proxy.js'
-    });
-  }
-
   const auth = await authorizeRequest(req, res);
   if (!auth || !auth.ok) return;
 
@@ -86,6 +78,41 @@ export default async function handler(req, res) {
     }
   };
 
+  const mapAnswer = (answer) => ({
+    link: String(answer?.link || '').trim(),
+    answer: String(answer?.answer || '').trim(),
+    topAnswer: Boolean(answer?.top_answer),
+    votes: Number(answer?.votes || 0)
+  });
+
+  const mapSitelink = (sitelink) => ({
+    title: String(sitelink?.title || '').trim(),
+    link: String(sitelink?.link || '').trim(),
+    snippet: String(sitelink?.snippet || '').trim(),
+    answerCount: Number(sitelink?.answer_count || 0),
+    date: String(sitelink?.date || '').trim()
+  });
+
+  const mapForumResult = (result) => ({
+    position: result.position,
+    title: String(result.title || '').trim(),
+    link: String(result.link || '').trim(),
+    redirectLink: String(result.redirect_link || '').trim(),
+    displayedLink: String(result.displayed_link || '').trim(),
+    displayedMeta: String(result.displayed_meta || '').trim(),
+    date: String(result.date || '').trim(),
+    source: String(result.source || 'Unknown').trim(),
+    snippet: String(result.snippet || '').trim(),
+    snippetHighlightedWords: Array.isArray(result.snippet_highlighted_words) ? result.snippet_highlighted_words : [],
+    favicon: String(result.favicon || '').trim(),
+    aboutThisResult: result.about_this_result || null,
+    sitelinks: {
+      expanded: Array.isArray(result?.sitelinks?.expanded) ? result.sitelinks.expanded.map(mapSitelink) : [],
+      list: Array.isArray(result?.sitelinks?.list) ? result.sitelinks.list.map(mapSitelink) : []
+    },
+    answers: Array.isArray(result.answers) ? result.answers.slice(0, 5).map(mapAnswer) : []
+  });
+
   // Try each API key in sequence
   for (const apiKey of apiKeys) {
     try {
@@ -111,36 +138,31 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Extract top results and structure the response
+      // Extract useful forum signals and structure the response
       const organicResults = payload.organic_results || [];
       const relatedSearches = payload.related_searches || [];
+      const pagination = payload.serpapi_pagination || {};
 
-      // Take top 5 forum discussions
-      const topForums = organicResults.slice(0, 5).map((result) => ({
-        position: result.position,
-        title: result.title,
-        link: result.link,
-        source: result.source || 'Unknown',
-        snippet: result.snippet,
-        displayMeta: result.displayed_meta,
-        numberOfAnswers: result.answers?.length || 0,
-        answers: (result.answers || []).slice(0, 3).map((a) => ({
-          answer: a.answer,
-          author: a.user_name || a.author || 'Anonymous',
-          votes: a.votes || a.vote_count || a.rating || a.helpful_votes || 0,
-          helpful_votes: a.helpful_votes || 0,
-          rating: a.rating || 0,
-          topAnswer: a.top_answer || a.is_top_answer || false,
-          posted_date: a.posted_date || null
-        }))
-      }));
+      // Keep the most relevant forum discussions, but preserve the rich metadata for synthesis.
+      const topForums = organicResults.slice(0, 5).map(mapForumResult);
 
       return res.status(200).json({
         success: true,
+        query: String(q),
         forums: topForums,
-        relatedSearches: relatedSearches.slice(0, 5),
+        relatedSearches: relatedSearches.slice(0, 5).map((item) => ({
+          blockPosition: Number(item?.block_position || 0),
+          query: String(item?.query || '').trim(),
+          link: String(item?.link || '').trim(),
+          serpapiLink: String(item?.serpapi_link || '').trim()
+        })),
         totalResults: payload.search_information?.total_results || 0,
-        internalSecret: process.env.INTERNAL_PROXY_SECRET || null
+        searchInformation: payload.search_information || {},
+        pagination: {
+          current: pagination.current || null,
+          next: String(pagination.next || '').trim(),
+          previous: String(pagination.previous || '').trim()
+        }
       });
     } catch (error) {
       lastError = error;
