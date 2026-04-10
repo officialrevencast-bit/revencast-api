@@ -163,7 +163,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         query: String(q),
-        time_range: timeRangeRaw || null,
+        time_range: timeRange || null,
         forums: topForums,
         relatedSearches: relatedSearches.slice(0, 5).map(mapRelatedSearch),
         totalResults: payload.search_information?.total_results || 0,
