@@ -140,6 +140,12 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // DEBUG: Log full SerpAPI response structure
+      console.log('[SERPAPI-RESPONSE]', JSON.stringify(payload, null, 2));
+      console.log('[SERPAPI-KEYS]', Object.keys(payload));
+      console.log('[SERPAPI-DISCUSSIONS]', payload.discussions_and_forums?.length ?? 0);
+      console.log('[SERPAPI-ORGANIC]', payload.organic_results?.length ?? 0);
+
       // Extract useful discussion/forum signals and structure the response
       const discussions = Array.isArray(payload.discussions_and_forums)
         ? payload.discussions_and_forums
@@ -148,6 +154,8 @@ export default async function handler(req, res) {
           : [];
       const relatedSearches = Array.isArray(payload.related_searches) ? payload.related_searches : [];
       const pagination = payload.serpapi_pagination || {};
+
+      console.log('[EXTRACTED]', { discussions_count: discussions.length, related_count: relatedSearches.length });
 
       // Keep the most relevant discussions, but preserve the rich metadata for synthesis.
       const topForums = discussions.slice(0, 8).map(mapDiscussionForum);
