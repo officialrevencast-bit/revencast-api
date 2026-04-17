@@ -17,7 +17,8 @@ export default async function handler(req, res) {
 
   const apiKeys = [
     process.env.SERPAPI_KEY,
-    process.env.SERPAPI_KEY_2
+    process.env.SERPAPI_KEY_2,
+    process.env.SERPAPI_KEY_3
   ].filter(Boolean);
 
   if (apiKeys.length === 0) {
