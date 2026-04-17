@@ -98,23 +98,38 @@ async function handler(req, res) {
         },
         call1_json: req.body?.call1_json ?? null,
         call2_json: req.body?.call2_json ?? null,
+        call3_json: req.body?.call3_json ?? null,
         merged_json: req.body?.merged_json ?? null,
         call1_raw: req.body?.call1_raw ?? null,
         call2_raw: req.body?.call2_raw ?? null,
+        call3_raw: req.body?.call3_raw ?? null,
         // Column name in Supabase is `references_json` (since `references` is a reserved keyword in Postgres).
         references_json: req.body?.references ?? null
       };
+      const insertReport = async (dataRow) => {
+        const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
+          method: 'POST',
+          headers: {
+            ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY),
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(dataRow)
+        });
+        const payload = await parseJsonSafe(response);
+        return { response, payload };
+      };
 
-      const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
-        method: 'POST',
-        headers: {
-          ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY),
-          Prefer: 'return=representation'
-        },
-        body: JSON.stringify(row)
-      });
-
-      const payload = await parseJsonSafe(response);
+      let { response, payload } = await insertReport(row);
+      if (!response.ok) {
+        const message = String(payload?.message || payload?.error || '').toLowerCase();
+        const missingCall3Columns = message.includes('call3_json') || message.includes('call3_raw');
+        if (missingCall3Columns) {
+          const fallbackRow = { ...row };
+          delete fallbackRow.call3_json;
+          delete fallbackRow.call3_raw;
+          ({ response, payload } = await insertReport(fallbackRow));
+        }
+      }
       if (!response.ok) {
         logError('Supabase create_report failed:', response.status, payload);
         return res.status(500).json({
