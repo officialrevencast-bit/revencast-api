@@ -24,7 +24,7 @@ async function handler(req, res) {
   const auth = await authorizeRequest(req, res);
   if (!auth || !auth.ok) return;
 
-  const apiKeys = [process.env.SERPAPI_KEY, process.env.SERPAPI_KEY_2].filter(Boolean);
+  const apiKeys = [process.env.SERPAPI_KEY, process.env.SERPAPI_KEY_2, process.env.SERPAPI_KEY_3].filter(Boolean);
   if (apiKeys.length === 0) {
     return res.status(500).json({ error: 'No SerpAPI keys configured' });
   }
