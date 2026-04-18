@@ -23,29 +23,42 @@ export default async function handler(req, res) {
       max_tokens = 1000,
       max_completion_tokens,
       max_output_tokens = 1000,
-      temperature = 0.7,
+      temperature,
       input
     } = req.body || {};
 
     const chatMaxCompletionTokens = max_completion_tokens ?? max_tokens;
+
+    /** Models that only accept default sampling — omit temperature (API default 1). */
+    const omitSamplingParams = /^gpt-5/i.test(model) || /^o[0-9]/i.test(model);
 
     const isResponsesApi = api === 'responses' || (!!input && !messages);
     const endpoint = isResponsesApi
       ? 'https://api.openai.com/v1/responses'
       : 'https://api.openai.com/v1/chat/completions';
     const body = isResponsesApi
-      ? {
-          model,
-          input: input || '',
-          temperature,
-          max_output_tokens
-        }
-      : {
-          model,
-          messages,
-          max_completion_tokens: chatMaxCompletionTokens,
-          temperature
-        };
+      ? (() => {
+          const b = {
+            model,
+            input: input || '',
+            max_output_tokens
+          };
+          if (!omitSamplingParams && temperature != null) {
+            b.temperature = temperature;
+          }
+          return b;
+        })()
+      : (() => {
+          const b = {
+            model,
+            messages,
+            max_completion_tokens: chatMaxCompletionTokens
+          };
+          if (!omitSamplingParams && temperature != null) {
+            b.temperature = temperature;
+          }
+          return b;
+        })();
 
     const response = await fetch(endpoint, {
       method: 'POST',
