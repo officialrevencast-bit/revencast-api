@@ -19,12 +19,15 @@ export default async function handler(req, res) {
     const {
       api = 'chat_completions',
       messages,
-      model = "gpt-4.1-mini",
+      model = "gpt-5-nano",
       max_tokens = 1000,
+      max_completion_tokens,
       max_output_tokens = 1000,
       temperature = 0.7,
       input
     } = req.body || {};
+
+    const chatMaxCompletionTokens = max_completion_tokens ?? max_tokens;
 
     const isResponsesApi = api === 'responses' || (!!input && !messages);
     const endpoint = isResponsesApi
@@ -40,7 +43,7 @@ export default async function handler(req, res) {
       : {
           model,
           messages,
-          max_tokens,
+          max_completion_tokens: chatMaxCompletionTokens,
           temperature
         };
 
