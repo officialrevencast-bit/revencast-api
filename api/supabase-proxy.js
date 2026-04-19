@@ -34,6 +34,28 @@ async function parseJsonSafe(response) {
   }
 }
 
+const REPORT_CHAT_MAX_USER_MESSAGES = 10;
+const REPORT_CHAT_MAX_CONTENT_CHARS = 12000;
+
+async function assertReportOwned(supabaseUrl, serviceKey, uid, reportId) {
+  const url = `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(
+    reportId
+  )}&select=id,user_id`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: supabaseHeaders(serviceKey)
+  });
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    return { ok: false, payload };
+  }
+  const row = Array.isArray(payload) ? payload[0] : null;
+  if (!row || String(row.user_id || '') !== String(uid || '')) {
+    return { ok: false, payload: { error: 'not_found' } };
+  }
+  return { ok: true, row };
+}
+
 async function handler(req, res) {
   const { authorizeRequest, setCors } = await import('./_auth-utils.js');
 
@@ -204,6 +226,132 @@ async function handler(req, res) {
       const docs = Array.isArray(payload) ? payload : [];
       const next_cursor = docs.length ? String(docs[docs.length - 1]?.created_at || '') : '';
       return res.status(200).json({ reports: docs, next_cursor });
+    }
+
+    if (action === 'get_report_chat') {
+      const reportId = String(req.body?.report_id || '').trim();
+      if (!reportId) return res.status(400).json({ error: 'report_id is required' });
+
+      const base = SUPABASE_URL.replace(/\/+$/, '');
+      const own = await assertReportOwned(base, SUPABASE_SERVICE_ROLE_KEY, auth.uid, reportId);
+      if (!own.ok) {
+        return res.status(own.payload?.error === 'not_found' ? 404 : 500).json({
+          error: 'Report not found',
+          details: own.payload?.message || own.payload?.error
+        });
+      }
+
+      const url = `${base}/rest/v1/report_chat_messages?report_id=eq.${encodeURIComponent(
+        reportId
+      )}&user_id=eq.${encodeURIComponent(auth.uid)}&order=created_at.asc&select=role,content,created_at,id`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+      });
+      const payload = await parseJsonSafe(response);
+      if (!response.ok) {
+        const msg = String(payload?.message || payload?.error || '').toLowerCase();
+        if (msg.includes('relation') && msg.includes('does not exist')) {
+          return res.status(503).json({
+            error: 'Chat storage not ready',
+            details: 'Create table report_chat_messages (see sql/report_chat_messages.sql).'
+          });
+        }
+        logError('Supabase get_report_chat failed:', response.status, payload);
+        return res.status(500).json({
+          error: 'Failed to load report chat',
+          details: payload?.message || payload?.error || `supabase_${response.status}`
+        });
+      }
+      const messages = Array.isArray(payload) ? payload : [];
+      const user_message_count = messages.filter((m) => String(m?.role) === 'user').length;
+      return res.status(200).json({ messages, user_message_count });
+    }
+
+    if (action === 'save_report_chat_turn') {
+      const reportId = String(req.body?.report_id || '').trim();
+      const user_message = String(req.body?.user_message || '').trim();
+      const assistant_message = String(req.body?.assistant_message || '').trim();
+      if (!reportId) return res.status(400).json({ error: 'report_id is required' });
+      if (!user_message) return res.status(400).json({ error: 'user_message is required' });
+      if (!assistant_message) return res.status(400).json({ error: 'assistant_message is required' });
+      if (user_message.length > REPORT_CHAT_MAX_CONTENT_CHARS) {
+        return res.status(400).json({ error: 'user_message too long' });
+      }
+      if (assistant_message.length > REPORT_CHAT_MAX_CONTENT_CHARS) {
+        return res.status(400).json({ error: 'assistant_message too long' });
+      }
+
+      const base = SUPABASE_URL.replace(/\/+$/, '');
+      const own = await assertReportOwned(base, SUPABASE_SERVICE_ROLE_KEY, auth.uid, reportId);
+      if (!own.ok) {
+        return res.status(own.payload?.error === 'not_found' ? 404 : 500).json({
+          error: 'Report not found',
+          details: own.payload?.message || own.payload?.error
+        });
+      }
+
+      const countUrl = `${base}/rest/v1/report_chat_messages?report_id=eq.${encodeURIComponent(
+        reportId
+      )}&user_id=eq.${encodeURIComponent(auth.uid)}&role=eq.user&select=id`;
+      const countRes = await fetch(countUrl, {
+        method: 'GET',
+        headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+      });
+      const countPayload = await parseJsonSafe(countRes);
+      if (!countRes.ok) {
+        logError('Supabase save_report_chat_turn count failed:', countRes.status, countPayload);
+        return res.status(500).json({
+          error: 'Failed to verify chat limit',
+          details: countPayload?.message || countPayload?.error
+        });
+      }
+      const existingUsers = Array.isArray(countPayload) ? countPayload.length : 0;
+      if (existingUsers >= REPORT_CHAT_MAX_USER_MESSAGES) {
+        return res.status(403).json({ error: 'Message limit reached for this report' });
+      }
+
+      const insertUrl = `${base}/rest/v1/report_chat_messages`;
+      const insertBody = [
+        {
+          report_id: reportId,
+          user_id: auth.uid,
+          role: 'user',
+          content: user_message
+        },
+        {
+          report_id: reportId,
+          user_id: auth.uid,
+          role: 'assistant',
+          content: assistant_message
+        }
+      ];
+      const insertRes = await fetch(insertUrl, {
+        method: 'POST',
+        headers: {
+          ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY),
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(insertBody)
+      });
+      const insertPayload = await parseJsonSafe(insertRes);
+      if (!insertRes.ok) {
+        const msg = String(insertPayload?.message || insertPayload?.error || '').toLowerCase();
+        if (msg.includes('relation') && msg.includes('does not exist')) {
+          return res.status(503).json({
+            error: 'Chat storage not ready',
+            details: 'Create table report_chat_messages (see sql/report_chat_messages.sql).'
+          });
+        }
+        logError('Supabase save_report_chat_turn insert failed:', insertRes.status, insertPayload);
+        return res.status(500).json({
+          error: 'Failed to save chat',
+          details: insertPayload?.message || insertPayload?.error || `supabase_${insertRes.status}`
+        });
+      }
+
+      const user_message_count = existingUsers + 1;
+      return res.status(200).json({ ok: true, user_message_count });
     }
 
     return res.status(400).json({ error: 'Unknown action' });
