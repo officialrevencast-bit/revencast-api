@@ -100,21 +100,33 @@ async function handler(req, res) {
           </div>
         `
       });
-      logError('[report-pdf-export] PDF generated successfully, size:', pdfBuffer.length);
+      logError('[report-pdf-export] PDF generated successfully, size:', pdfBuffer.length, 'type:', typeof pdfBuffer);
 
       // Workaround for Vercel JSON serialization: send as base64
       try {
-        const pdfBase64 = pdfBuffer.toString('base64');
-        logError('[report-pdf-export] Base64 encoded, length:', pdfBase64.length, 'first 50 chars:', pdfBase64.slice(0, 50));
+        // Ensure pdfBuffer is a Buffer, not something else
+        const bufferToEncode = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+        const pdfBase64 = bufferToEncode.toString('base64');
+        
+        // Verify it's a string, not an object
+        logError('[report-pdf-export] Base64 type:', typeof pdfBase64, 'length:', pdfBase64.length, 'first 50 chars:', pdfBase64.slice(0, 50));
+        
+        if (typeof pdfBase64 !== 'string') {
+          throw new Error(`pdfBase64 is not a string, it's a ${typeof pdfBase64}`);
+        }
         
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = 200;
-        const jsonPayload = {
+        
+        // Build and serialize JSON explicitly
+        const responseBody = JSON.stringify({
           success: true,
           data: pdfBase64,
           filename: fileName
-        };
-        res.end(JSON.stringify(jsonPayload));
+        });
+        
+        logError('[report-pdf-export] Response body length:', responseBody.length);
+        res.end(responseBody);
         return;
       } catch (encodeErr) {
         logError('[report-pdf-export] Base64 encoding failed:', encodeErr);
