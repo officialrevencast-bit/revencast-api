@@ -103,13 +103,29 @@ async function handler(req, res) {
       logError('[report-pdf-export] PDF generated successfully, size:', pdfBuffer.length);
 
       // Workaround for Vercel JSON serialization: send as base64
-      const pdfBase64 = pdfBuffer.toString('base64');
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).json({
-        success: true,
-        data: pdfBase64,
-        filename: fileName
-      });
+      try {
+        const pdfBase64 = pdfBuffer.toString('base64');
+        logError('[report-pdf-export] Base64 encoded, length:', pdfBase64.length, 'first 50 chars:', pdfBase64.slice(0, 50));
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 200;
+        const jsonPayload = {
+          success: true,
+          data: pdfBase64,
+          filename: fileName
+        };
+        res.end(JSON.stringify(jsonPayload));
+        return;
+      } catch (encodeErr) {
+        logError('[report-pdf-export] Base64 encoding failed:', encodeErr);
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 500;
+        res.end(JSON.stringify({
+          error: 'PDF encoding failed',
+          details: encodeErr?.message || 'Unknown encoding error'
+        }));
+        return;
+      }
     } finally {
       if (browser) {
         try { await browser.close(); } catch {}
