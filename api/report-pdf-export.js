@@ -102,10 +102,20 @@ async function handler(req, res) {
       });
       logError('[report-pdf-export] PDF generated successfully, size:', pdfBuffer.length);
 
+      // Explicitly ensure binary transmission
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', Buffer.byteLength(pdfBuffer));
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       res.setHeader('Cache-Control', 'no-store, max-age=0');
-      return res.status(200).send(pdfBuffer);
+      res.setHeader('Transfer-Encoding', 'binary');
+      
+      // Send as binary buffer, not JSON
+      if (Buffer.isBuffer(pdfBuffer)) {
+        res.status(200).end(pdfBuffer);
+      } else {
+        res.status(200).send(pdfBuffer);
+      }
+      return;
     } finally {
       if (browser) {
         try { await browser.close(); } catch {}
