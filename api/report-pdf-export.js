@@ -67,17 +67,25 @@ async function handler(req, res) {
 
     let browser;
     try {
+      logError('[report-pdf-export] Starting PDF generation for report:', reportId);
+      
       const { puppeteer, launchArgs } = await getPuppeteer();
+      logError('[report-pdf-export] Puppeteer loaded, launching browser...');
+      
       browser = await puppeteer.launch({
         ...launchArgs,
         defaultViewport: { width: 1440, height: 2200, deviceScaleFactor: 2 }
       });
+      logError('[report-pdf-export] Browser launched successfully');
 
       const page = await browser.newPage();
+      logError('[report-pdf-export] New page created, setting content...');
+      
       await page.setContent(html, {
         waitUntil: ['domcontentloaded', 'networkidle0'],
-        timeout: 45000
+        timeout: 60000
       });
+      logError('[report-pdf-export] Page content set, generating PDF...');
 
       const pdfBuffer = await page.pdf({
         format: 'A4',
@@ -92,6 +100,7 @@ async function handler(req, res) {
           </div>
         `
       });
+      logError('[report-pdf-export] PDF generated successfully, size:', pdfBuffer.length);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -104,10 +113,14 @@ async function handler(req, res) {
     }
   } catch (err) {
     setCors(res, 'POST, OPTIONS');
-    logError('[report-pdf-export] failed:', err);
+    const errorMsg = String(err?.message || err || 'Unknown error');
+    const errorStack = String(err?.stack || '');
+    logError('[report-pdf-export] failed:', errorMsg);
+    logError('[report-pdf-export] stack:', errorStack);
     return res.status(500).json({
       error: 'Failed to generate PDF',
-      details: String(err?.message || err || 'Unknown error')
+      details: errorMsg,
+      type: err?.constructor?.name || 'Error'
     });
   }
 }
