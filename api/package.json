@@ -1,7 +1,6 @@
 {
   "name": "revencast-api",
   "private": true,
-  "type": "module",
   "dependencies": {
     "@sparticuz/chromium": "^147.0.2",
     "firebase-admin": "^13.0.2",
