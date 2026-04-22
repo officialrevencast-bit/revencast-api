@@ -126,8 +126,7 @@ async function handler(req, res) {
         call2_raw: req.body?.call2_raw ?? null,
         call3_raw: req.body?.call3_raw ?? null,
         // Column name in Supabase is `references_json` (since `references` is a reserved keyword in Postgres).
-        references_json: req.body?.references ?? null,
-        pdf_json: req.body?.pdf_json ?? null
+        references_json: req.body?.references ?? null
       };
       const insertReport = async (dataRow) => {
         const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
@@ -142,27 +141,17 @@ async function handler(req, res) {
         return { response, payload };
       };
 
-      let response;
-      let payload;
-      let insertRow = { ...row };
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        ({ response, payload } = await insertReport(insertRow));
-        if (response.ok) break;
-
+      let { response, payload } = await insertReport(row);
+      if (!response.ok) {
         const message = String(payload?.message || payload?.error || '').toLowerCase();
-        let changed = false;
-        if (message.includes('call3_json') || message.includes('call3_raw')) {
-          delete insertRow.call3_json;
-          delete insertRow.call3_raw;
-          changed = true;
+        const missingCall3Columns = message.includes('call3_json') || message.includes('call3_raw');
+        if (missingCall3Columns) {
+          const fallbackRow = { ...row };
+          delete fallbackRow.call3_json;
+          delete fallbackRow.call3_raw;
+          ({ response, payload } = await insertReport(fallbackRow));
         }
-        if (message.includes('pdf_json')) {
-          delete insertRow.pdf_json;
-          changed = true;
-        }
-        if (!changed) break;
       }
-
       if (!response.ok) {
         logError('Supabase create_report failed:', response.status, payload);
         return res.status(500).json({
