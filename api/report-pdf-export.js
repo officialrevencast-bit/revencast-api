@@ -149,7 +149,7 @@ async function handler(req, res) {
         headerTemplate: '<span></span>',
         footerTemplate: `
           <div style="width:100%;font-size:9px;color:#64748b;padding:0 10mm;display:flex;justify-content:space-between;">
-            <span>Revencast Report ${reportId ? `• ${reportId.slice(0, 8)}` : ''}</span>
+            <span>Revencast Report ${reportId ? `| ${reportId.slice(0, 8)}` : ''}</span>
             <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
           </div>
         `
