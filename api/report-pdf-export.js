@@ -4,6 +4,9 @@ const DEBUG_LOGS =
   String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' ||
   process.env.APP_DEBUG_LOGS === '1';
 const MAX_HTML_BYTES = 2_500_000;
+const PDF_MARGIN_MM = { top: 16, right: 12, bottom: 16, left: 12 };
+const A4_HEIGHT_MM = 297;
+const PX_PER_MM = 96 / 25.4;
 
 function logError(...args) {
   if (DEBUG_LOGS) console.error(...args);
@@ -35,6 +38,40 @@ async function getPuppeteer() {
   };
 }
 
+async function injectTocPageNumbers(page) {
+  const printableHeightPx = (A4_HEIGHT_MM - PDF_MARGIN_MM.top - PDF_MARGIN_MM.bottom) * PX_PER_MM;
+  const tocPages = await page.evaluate((contentHeightPx) => {
+    const anchors = [...document.querySelectorAll('[data-pdf-anchor]')];
+    if (!anchors.length) return {};
+
+    const pageMap = {};
+    let currentPage = 3; // cover + TOC
+
+    anchors.forEach((el) => {
+      const id = String(el.getAttribute('data-pdf-anchor') || '').trim();
+      if (!id) return;
+      const elementHeight = Math.max(
+        Number(el.scrollHeight || 0),
+        Number(el.getBoundingClientRect().height || 0),
+        1
+      );
+      const pageSpan = Math.max(1, Math.ceil(elementHeight / Math.max(contentHeightPx, 1)));
+      pageMap[id] = currentPage;
+      currentPage += pageSpan;
+    });
+
+    document.querySelectorAll('[data-toc-page-for]').forEach((node) => {
+      const key = String(node.getAttribute('data-toc-page-for') || '').trim();
+      const pageNo = pageMap[key];
+      node.textContent = Number.isFinite(pageNo) ? String(pageNo) : '-';
+    });
+
+    return pageMap;
+  }, printableHeightPx);
+
+  logError('[report-pdf-export] TOC page map:', tocPages);
+}
+
 async function handler(req, res) {
   const { authorizeRequest, setCors } = await import('./_auth-utils.js');
   setCors(res, 'POST, OPTIONS');
@@ -51,10 +88,17 @@ async function handler(req, res) {
 
     const html = String(req.body?.html || '');
     const reportId = String(req.body?.report_id || '').trim();
-    const fileName = sanitizeFileName(req.body?.file_name);
+    const incomingFileName = String(req.body?.file_name || '').trim();
+    const fileName = sanitizeFileName(incomingFileName);
 
     if (!html.trim()) {
       return res.status(400).json({ error: 'html is required' });
+    }
+    if (!reportId) {
+      return res.status(400).json({ error: 'report_id is required' });
+    }
+    if (!incomingFileName) {
+      return res.status(400).json({ error: 'file_name is required' });
     }
 
     const htmlBytes = Buffer.byteLength(html, 'utf8');
@@ -87,10 +131,20 @@ async function handler(req, res) {
       });
       logError('[report-pdf-export] Page content set, generating PDF...');
 
+      // Pass 1: compute section start pages and inject TOC page numbers.
+      await injectTocPageNumbers(page);
+      // Pass 2: re-render the adjusted DOM before final PDF generation.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
+
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
-        margin: { top: '16mm', right: '12mm', bottom: '16mm', left: '12mm' },
+        margin: {
+          top: `${PDF_MARGIN_MM.top}mm`,
+          right: `${PDF_MARGIN_MM.right}mm`,
+          bottom: `${PDF_MARGIN_MM.bottom}mm`,
+          left: `${PDF_MARGIN_MM.left}mm`
+        },
         displayHeaderFooter: true,
         headerTemplate: '<span></span>',
         footerTemplate: `
