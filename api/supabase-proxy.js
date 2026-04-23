@@ -125,6 +125,8 @@ async function handler(req, res) {
         call1_raw: req.body?.call1_raw ?? null,
         call2_raw: req.body?.call2_raw ?? null,
         call3_raw: req.body?.call3_raw ?? null,
+        forum_json: req.body?.forum_json ?? null,
+        forum_raw: req.body?.forum_raw ?? null,
         // Column name in Supabase is `references_json` (since `references` is a reserved keyword in Postgres).
         references_json: req.body?.references ?? null
       };
@@ -145,10 +147,17 @@ async function handler(req, res) {
       if (!response.ok) {
         const message = String(payload?.message || payload?.error || '').toLowerCase();
         const missingCall3Columns = message.includes('call3_json') || message.includes('call3_raw');
-        if (missingCall3Columns) {
+        const missingForumColumns = message.includes('forum_json') || message.includes('forum_raw');
+        if (missingCall3Columns || missingForumColumns) {
           const fallbackRow = { ...row };
-          delete fallbackRow.call3_json;
-          delete fallbackRow.call3_raw;
+          if (missingCall3Columns) {
+            delete fallbackRow.call3_json;
+            delete fallbackRow.call3_raw;
+          }
+          if (missingForumColumns) {
+            delete fallbackRow.forum_json;
+            delete fallbackRow.forum_raw;
+          }
           ({ response, payload } = await insertReport(fallbackRow));
         }
       }

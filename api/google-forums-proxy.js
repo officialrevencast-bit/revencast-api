@@ -28,6 +28,7 @@
 
     const params = new URLSearchParams(req.method === 'POST' ? req.body : req.query);
     const q = params.get('q');
+    const gl = String(params.get('gl') || 'us').trim().toLowerCase() || 'us';
     if (!q) {
       return res.status(400).json({ error: 'Missing required parameter: q' });
     }
@@ -38,6 +39,7 @@
     const baseParams = new URLSearchParams();
     baseParams.set('engine', 'google');
     baseParams.set('q', q);
+    baseParams.set('gl', gl);
     baseParams.set('udm', '18');
     baseParams.set('tbs', `qdr:${timeRange}`);
 
