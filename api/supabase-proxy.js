@@ -114,22 +114,22 @@ async function handler(req, res) {
         status,
         error: req.body?.error ? String(req.body.error) : null,
         input: {
-          idea_name,
-          product_idea,
-          target_country
+            idea_name,
+            product_idea,
+            target_country
         },
         call1_json: req.body?.call1_json ?? null,
         call2_json: req.body?.call2_json ?? null,
         call3_json: req.body?.call3_json ?? null,
         merged_json: req.body?.merged_json ?? null,
+        pdf_report_json: req.body?.pdf_report_json ?? null, // ← ADD THIS LINE
         call1_raw: req.body?.call1_raw ?? null,
         call2_raw: req.body?.call2_raw ?? null,
         call3_raw: req.body?.call3_raw ?? null,
         forum_json: req.body?.forum_json ?? null,
         forum_raw: req.body?.forum_raw ?? null,
-        // Column name in Supabase is `references_json` (since `references` is a reserved keyword in Postgres).
         references_json: req.body?.references ?? null
-      };
+    };
       const insertReport = async (dataRow) => {
         const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
           method: 'POST',
