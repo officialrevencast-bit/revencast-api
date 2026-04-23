@@ -45,19 +45,13 @@ async function injectTocPageNumbers(page) {
     if (!anchors.length) return {};
 
     const pageMap = {};
-    let currentPage = 3; // cover + TOC
-
     anchors.forEach((el) => {
       const id = String(el.getAttribute('data-pdf-anchor') || '').trim();
       if (!id) return;
-      const elementHeight = Math.max(
-        Number(el.scrollHeight || 0),
-        Number(el.getBoundingClientRect().height || 0),
-        1
-      );
-      const pageSpan = Math.max(1, Math.ceil(elementHeight / Math.max(contentHeightPx, 1)));
-      pageMap[id] = currentPage;
-      currentPage += pageSpan;
+      const rect = el.getBoundingClientRect();
+      const top = Number(rect.top || 0) + Number(window.scrollY || 0);
+      const pageNo = Math.max(1, Math.floor(top / Math.max(contentHeightPx, 1)) + 1);
+      pageMap[id] = pageNo;
     });
 
     document.querySelectorAll('[data-toc-page-for]').forEach((node) => {
@@ -149,7 +143,7 @@ async function handler(req, res) {
         headerTemplate: '<span></span>',
         footerTemplate: `
           <div style="width:100%;font-size:9px;color:#64748b;padding:0 10mm;display:flex;justify-content:space-between;">
-            <span>Revencast Report ${reportId ? `| ${reportId.slice(0, 8)}` : ''}</span>
+            <span>Revencast Report</span>
             <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
           </div>
         `
