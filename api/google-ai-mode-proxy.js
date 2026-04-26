@@ -123,6 +123,7 @@ async function handler(req, res) {
 
       if (isMetadataOnlyPayload(data)) {
         const rawHtmlUrl = String(data?.search_metadata?.raw_html_file || '').trim();
+        const prettifyHtmlUrl = String(data?.search_metadata?.prettify_html_file || '').trim();
         if (rawHtmlUrl) {
           try {
             const htmlResp = await fetch(rawHtmlUrl, { method: 'GET' });
@@ -134,6 +135,19 @@ async function handler(req, res) {
             }
           } catch (htmlErr) {
             data.raw_html_fetch_error = htmlErr?.message || 'raw_html_fetch_failed';
+          }
+        }
+        if (prettifyHtmlUrl) {
+          try {
+            const prettifyResp = await fetch(prettifyHtmlUrl, { method: 'GET' });
+            if (prettifyResp.ok) {
+              const prettifyText = await prettifyResp.text();
+              data.prettify_html_text = String(prettifyText || '').slice(0, 250000);
+            } else {
+              data.prettify_html_fetch_error = `prettify_html_http_${prettifyResp.status}`;
+            }
+          } catch (prettifyErr) {
+            data.prettify_html_fetch_error = prettifyErr?.message || 'prettify_html_fetch_failed';
           }
         }
       }
