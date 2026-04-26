@@ -12,6 +12,14 @@ function logError(...args) {
   if (DEBUG_LOGS) console.error(...args);
 }
 
+function isMetadataOnlyPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload);
+  if (!keys.length) return false;
+  const allowed = new Set(['search_metadata', 'search_parameters']);
+  return keys.every((k) => allowed.has(k));
+}
+
 async function handler(req, res) {
   const { authorizeRequest, setCors } = await import('./_auth-utils.js');
 
@@ -111,6 +119,23 @@ async function handler(req, res) {
 
       if (!response.ok) {
         return res.status(response.status).json(data);
+      }
+
+      if (isMetadataOnlyPayload(data)) {
+        const rawHtmlUrl = String(data?.search_metadata?.raw_html_file || '').trim();
+        if (rawHtmlUrl) {
+          try {
+            const htmlResp = await fetch(rawHtmlUrl, { method: 'GET' });
+            if (htmlResp.ok) {
+              const htmlText = await htmlResp.text();
+              data.raw_html_text = String(htmlText || '').slice(0, 250000);
+            } else {
+              data.raw_html_fetch_error = `raw_html_http_${htmlResp.status}`;
+            }
+          } catch (htmlErr) {
+            data.raw_html_fetch_error = htmlErr?.message || 'raw_html_fetch_failed';
+          }
+        }
       }
 
       return res.status(200).json(data);
