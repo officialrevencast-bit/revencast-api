@@ -121,9 +121,9 @@ async function handler(req, res) {
         return res.status(response.status).json(data);
       }
 
-      if (isMetadataOnlyPayload(data)) {
-        const rawHtmlUrl = String(data?.search_metadata?.raw_html_file || '').trim();
-        const prettifyHtmlUrl = String(data?.search_metadata?.prettify_html_file || '').trim();
+      const rawHtmlUrl = String(data?.search_metadata?.raw_html_file || '').trim();
+      const prettifyHtmlUrl = String(data?.search_metadata?.prettify_html_file || '').trim();
+      if (rawHtmlUrl || prettifyHtmlUrl) {
         if (rawHtmlUrl) {
           try {
             const htmlResp = await fetch(rawHtmlUrl, { method: 'GET' });
@@ -136,6 +136,8 @@ async function handler(req, res) {
           } catch (htmlErr) {
             data.raw_html_fetch_error = htmlErr?.message || 'raw_html_fetch_failed';
           }
+        } else {
+          data.raw_html_fetch_error = 'raw_html_url_missing';
         }
         if (prettifyHtmlUrl) {
           try {
@@ -149,7 +151,12 @@ async function handler(req, res) {
           } catch (prettifyErr) {
             data.prettify_html_fetch_error = prettifyErr?.message || 'prettify_html_fetch_failed';
           }
+        } else {
+          data.prettify_html_fetch_error = 'prettify_html_url_missing';
         }
+      } else if (isMetadataOnlyPayload(data)) {
+        data.raw_html_fetch_error = 'raw_html_url_missing';
+        data.prettify_html_fetch_error = 'prettify_html_url_missing';
       }
 
       return res.status(200).json(data);
