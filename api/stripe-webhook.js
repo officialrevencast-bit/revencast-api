@@ -105,6 +105,36 @@ async function updateCheckoutRow(supabaseUrl, serviceKey, sessionId, updates) {
   }
 }
 
+async function grantSupabaseCredits(supabaseUrl, serviceKey, session) {
+  const metadata = session.metadata || {};
+  const uid = String(metadata.firebase_uid || session.client_reference_id || '').trim();
+  const credits = Math.max(0, Math.floor(Number(metadata.credits || 0)));
+  if (!uid || !credits) throw new Error('Missing checkout metadata');
+
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/grant_report_credits`, {
+    method: 'POST',
+    headers: supabaseHeaders(serviceKey),
+    body: JSON.stringify({
+      p_firebase_uid: uid,
+      p_credits: credits,
+      p_plan_key: String(metadata.plan_key || ''),
+      p_plan_name: String(metadata.plan_name || ''),
+      p_session_id: String(session.id || ''),
+      p_metadata: {
+        amount_total: session.amount_total || null,
+        currency: session.currency || null,
+        payment_intent: session.payment_intent || null,
+        customer: session.customer || null
+      }
+    })
+  });
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_credit_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload[0] : payload;
+}
+
 async function logWebhookEvent(supabaseUrl, serviceKey, event, status, error = '') {
   const response = await fetch(
     `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/stripe_webhook_events?on_conflict=event_id`,
@@ -125,22 +155,6 @@ async function logWebhookEvent(supabaseUrl, serviceKey, event, status, error = '
     const payload = await parseJsonSafe(response);
     throw new Error(payload?.message || payload?.error || `supabase_event_${response.status}`);
   }
-}
-
-async function incrementUserCredits(uid, credits, sessionId) {
-  const serviceAccountRaw = getEnv('FIRESTORE_SERVICE_ACCOUNT');
-  if (!serviceAccountRaw) return;
-
-  const { initializeApp, cert, getApps } = await import('firebase-admin/app');
-  const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
-  const serviceAccount = JSON.parse(serviceAccountRaw);
-  if (!getApps().length) initializeApp({ credential: cert(serviceAccount) });
-  const db = getFirestore();
-  await db.collection('Users').doc(uid).set({
-    creditsBalance: FieldValue.increment(Number(credits || 0)),
-    lastStripeCheckoutSessionId: sessionId,
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
 }
 
 async function handleCheckoutPaid(session) {
@@ -176,8 +190,9 @@ async function handleCheckoutPaid(session) {
 
   const row = existing || await getCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId);
   const alreadyCredited = Boolean(row?.credited_at);
+  let creditResult = null;
   if (!alreadyCredited) {
-    await incrementUserCredits(uid, credits, sessionId);
+    creditResult = await grantSupabaseCredits(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, session);
   }
 
   await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
@@ -188,6 +203,7 @@ async function handleCheckoutPaid(session) {
     stripe_customer_id: session.customer || null,
     paid_at: new Date().toISOString(),
     credited_at: alreadyCredited ? row.credited_at : new Date().toISOString(),
+    credits_balance_after: creditResult?.credits_balance ?? row?.credits_balance_after ?? null,
     raw_session: session
   });
 }
