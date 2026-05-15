@@ -16,11 +16,12 @@ function getEnv(name) {
   return String(process.env[name] || '').trim();
 }
 
-function supabaseHeaders(serviceRoleKey) {
+function supabaseHeaders(serviceRoleKey, prefer = '') {
   return {
     apikey: serviceRoleKey,
     Authorization: `Bearer ${serviceRoleKey}`,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    ...(prefer ? { Prefer: prefer } : {})
   };
 }
 
@@ -54,6 +55,76 @@ async function assertReportOwned(supabaseUrl, serviceKey, uid, reportId) {
     return { ok: false, payload: { error: 'not_found' } };
   }
   return { ok: true, row };
+}
+
+async function rpc(supabaseUrl, serviceKey, functionName, body) {
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/${functionName}`, {
+    method: 'POST',
+    headers: supabaseHeaders(serviceKey),
+    body: JSON.stringify(body || {})
+  });
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_rpc_${response.status}`);
+  }
+  return payload;
+}
+
+async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
+  const displayName = String(body?.display_name || body?.name || '').trim();
+  const email = String(body?.email || '').trim();
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?on_conflict=firebase_uid`, {
+    method: 'POST',
+    headers: supabaseHeaders(serviceKey, 'resolution=merge-duplicates,return=representation'),
+    body: JSON.stringify({
+      firebase_uid: auth.uid,
+      ...(email ? { email } : {}),
+      ...(displayName ? { display_name: displayName } : {}),
+      updated_at: new Date().toISOString()
+    })
+  });
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_account_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload[0] : payload;
+}
+
+async function getUserAccount(supabaseUrl, serviceKey, uid) {
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(uid)}&select=*`,
+    { headers: supabaseHeaders(serviceKey) }
+  );
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_account_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload[0] : null;
+}
+
+async function getCreditTransactions(supabaseUrl, serviceKey, uid, limit = 10) {
+  const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 10)));
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/credit_transactions?firebase_uid=eq.${encodeURIComponent(uid)}&select=*&order=created_at.desc&limit=${safeLimit}`,
+    { headers: supabaseHeaders(serviceKey) }
+  );
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_transactions_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload : [];
+}
+
+async function getLastCheckout(supabaseUrl, serviceKey, uid) {
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/stripe_checkout_sessions?firebase_uid=eq.${encodeURIComponent(uid)}&status=eq.paid&select=plan_key,plan_name,credits,amount_cents,currency,paid_at,stripe_session_id&order=paid_at.desc&limit=1`,
+    { headers: supabaseHeaders(serviceKey) }
+  );
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `supabase_checkout_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload[0] || null : null;
 }
 
 async function handler(req, res) {
@@ -175,6 +246,52 @@ async function handler(req, res) {
         return res.status(500).json({ error: 'Report created but id missing' });
       }
       return res.status(200).json({ report_id });
+    }
+
+    if (action === 'get_account') {
+      const account = await ensureUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
+      const [freshAccount, last_purchase, credit_transactions] = await Promise.all([
+        getUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid),
+        getLastCheckout(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid).catch(() => null),
+        getCreditTransactions(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid, req.body?.limit || 8).catch(() => [])
+      ]);
+      return res.status(200).json({
+        account: freshAccount || account,
+        last_purchase,
+        credit_transactions
+      });
+    }
+
+    if (action === 'consume_simulation_credit') {
+      await ensureUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
+      let result;
+      try {
+        result = await rpc(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'spend_report_credit', {
+          p_firebase_uid: auth.uid,
+          p_reason: 'simulation_run',
+          p_metadata: {
+            idea_name: String(req.body?.idea_name || '').trim().slice(0, 120),
+            target_country: String(req.body?.target_country || '').trim().slice(0, 120)
+          }
+        });
+      } catch (err) {
+        return res.status(503).json({
+          error: 'Credit system not ready',
+          details: err?.message || 'Create the Supabase credit RPC functions from docs/stripe-supabase-setup.md.'
+        });
+      }
+      const outcome = Array.isArray(result) ? result[0] : result;
+      if (!outcome?.ok) {
+        return res.status(402).json({
+          error: 'No credits available',
+          credits_balance: Number(outcome?.credits_balance || 0)
+        });
+      }
+      return res.status(200).json({
+        ok: true,
+        credits_balance: Number(outcome?.credits_balance || 0),
+        transaction_id: outcome?.transaction_id || null
+      });
     }
 
     if (action === 'get_report') {
