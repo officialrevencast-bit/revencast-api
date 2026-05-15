@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const DEBUG_LOGS =
   String(process.env.APP_DEBUG_LOGS || '').toLowerCase() === 'true' ||
@@ -14,7 +14,7 @@ function logError(...args) {
 
 function sanitizeFileName(name) {
   const cleaned = String(name || 'revencast_report.pdf')
-    .replace(/[^\w.\-]+/g, '_')
+    .replace(/[^\w.-]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '');
   if (!cleaned) return 'revencast_report.pdf';
@@ -188,7 +188,9 @@ async function handler(req, res) {
       }
     } finally {
       if (browser) {
-        try { await browser.close(); } catch {}
+        try { await browser.close(); } catch {
+          // Browser shutdown failure should not mask the PDF response.
+        }
       }
     }
   } catch (err) {
