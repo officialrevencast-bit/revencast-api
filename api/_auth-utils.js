@@ -61,7 +61,7 @@ export async function authorizeRequest(req, res, options = {}) {
             return res.status(401).json({ error: 'Unauthorized' });
           }
           return { ok: true, mode: 'bearer', uid };
-        } catch (_err) {
+        } catch {
           return res.status(401).json({ error: 'Unauthorized' });
         }
       }
