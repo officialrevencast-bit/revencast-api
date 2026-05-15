@@ -296,20 +296,20 @@ async function handler(req, res) {
         
         logError('RPC spend_report_credit error:', errorDetails);
         
+        // Only allow dev mode for "function not found" errors
         const isFunctionNotFound = errMsg.includes('function') && (errMsg.includes('does not exist') || errMsg.includes('not found'));
-        const isDevError = errMsg.toLowerCase().includes('rpc_') || errorDetails?.status === 400;
         
-        if (isFunctionNotFound || isDevError) {
-          logError('Credit system not ready, allowing simulation to proceed in dev mode');
+        if (isFunctionNotFound) {
+          logError('Credit function not set up yet, allowing simulation to proceed in dev mode');
           return res.status(200).json({
             ok: true,
             credits_balance: 0,
             transaction_id: null,
-            _warning: 'Credit system not fully initialized',
-            _debugError: errorDetails
+            _warning: 'Credit RPC function not deployed yet'
           });
         }
         
+        // For all other errors, return the actual error so user can see what's wrong
         return res.status(503).json({
           error: 'Credit system error',
           details: errorDetails?.message || err?.message || 'Failed to process credit transaction',
