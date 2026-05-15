@@ -65,11 +65,18 @@ async function rpc(supabaseUrl, serviceKey, functionName, body) {
   });
   const payload = await parseJsonSafe(response);
   if (!response.ok) {
-    const err = new Error(payload?.message || payload?.error || `supabase_rpc_${response.status}`);
-    err.statusCode = response.status;
-    err.payload = payload;
-    err.functionName = functionName;
-    throw err;
+    const errorDetail = {
+      status: response.status,
+      statusText: response.statusText,
+      message: payload?.message,
+      error: payload?.error,
+      details: payload?.details,
+      hint: payload?.hint,
+      code: payload?.code,
+      rawPayload: payload
+    };
+    logError(`RPC ${functionName} failed:`, JSON.stringify(errorDetail, null, 2));
+    throw new Error(JSON.stringify(errorDetail));
   }
   return payload;
 }
@@ -270,46 +277,43 @@ async function handler(req, res) {
       await ensureUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
       let result;
       try {
-        const params = {
+        result = await rpc(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'spend_report_credit', {
           p_firebase_uid: auth.uid,
           p_reason: 'simulation_run',
           p_metadata: {
             idea_name: String(req.body?.idea_name || '').trim().slice(0, 120),
             target_country: String(req.body?.target_country || '').trim().slice(0, 120)
           }
-        };
-        logError('[consume_simulation_credit] Calling RPC with params:', JSON.stringify(params, null, 2));
-        result = await rpc(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'spend_report_credit', params);
-        logError('[consume_simulation_credit] RPC succeeded:', JSON.stringify(result, null, 2));
+        });
       } catch (err) {
-        const errMsg = String(err?.message || '').toLowerCase();
+        const errMsg = String(err?.message || '');
+        let errorDetails;
+        try {
+          errorDetails = JSON.parse(errMsg);
+        } catch {
+          errorDetails = { message: errMsg };
+        }
         
-        logError('='.repeat(60));
-        logError('[consume_simulation_credit] RPC FAILED');
-        logError('Error message:', err?.message);
-        logError('Error statusCode:', err?.statusCode);
-        logError('Error payload:', JSON.stringify(err?.payload, null, 2));
-        logError('Error functionName:', err?.functionName);
-        logError('Firebase UID:', auth.uid);
-        logError('Full error object:', JSON.stringify(err, null, 2));
-        logError('='.repeat(60));
+        logError('RPC spend_report_credit error:', errorDetails);
         
         const isFunctionNotFound = errMsg.includes('function') && (errMsg.includes('does not exist') || errMsg.includes('not found'));
-        const isUnderDevelopment = errMsg.includes('rpc_') || errMsg.includes('400') || errMsg.includes('invalid');
+        const isDevError = errMsg.toLowerCase().includes('rpc_') || errorDetails?.status === 400;
         
-        if (isFunctionNotFound || isUnderDevelopment) {
-          logError('[consume_simulation_credit] Treating as development mode - allowing simulation');
+        if (isFunctionNotFound || isDevError) {
+          logError('Credit system not ready, allowing simulation to proceed in dev mode');
           return res.status(200).json({
             ok: true,
             credits_balance: 0,
             transaction_id: null,
-            _warning: 'Credit system not fully initialized'
+            _warning: 'Credit system not fully initialized',
+            _debugError: errorDetails
           });
         }
         
         return res.status(503).json({
           error: 'Credit system error',
-          details: err?.message || 'Failed to process credit transaction'
+          details: errorDetails?.message || err?.message || 'Failed to process credit transaction',
+          _fullError: errorDetails
         });
       }
       const outcome = Array.isArray(result) ? result[0] : result;
