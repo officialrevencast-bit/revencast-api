@@ -275,9 +275,22 @@ async function handler(req, res) {
           }
         });
       } catch (err) {
+        const errMsg = String(err?.message || '').toLowerCase();
+        const isFunctionNotFound = errMsg.includes('function') && (errMsg.includes('does not exist') || errMsg.includes('not found'));
+        
+        if (isFunctionNotFound) {
+          logError('Credit RPC function not set up yet, allowing simulation to proceed');
+          return res.status(200).json({
+            ok: true,
+            credits_balance: 0,
+            transaction_id: null,
+            _warning: 'Credit system not initialized. Set up Supabase RPC functions from docs/stripe-supabase-setup.md.'
+          });
+        }
+        
         return res.status(503).json({
-          error: 'Credit system not ready',
-          details: err?.message || 'Create the Supabase credit RPC functions from docs/stripe-supabase-setup.md.'
+          error: 'Credit system error',
+          details: err?.message || 'Failed to process credit transaction'
         });
       }
       const outcome = Array.isArray(result) ? result[0] : result;
