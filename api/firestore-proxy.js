@@ -68,7 +68,7 @@ function toMillis(value) {
         if (!Number.isNaN(n)) return n > 1e12 ? n : n * 1000;
       }
     }
-  } catch (_) {
+  } catch {
     return null;
   }
   return null;
