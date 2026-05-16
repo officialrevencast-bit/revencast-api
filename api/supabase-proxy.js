@@ -126,16 +126,86 @@ async function getCreditTransactions(supabaseUrl, serviceKey, uid, limit = 10) {
   return Array.isArray(payload) ? payload : [];
 }
 
-async function getLastCheckout(supabaseUrl, serviceKey, uid) {
-  const response = await fetch(
-    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/stripe_checkout_sessions?firebase_uid=eq.${encodeURIComponent(uid)}&status=eq.paid&select=plan_key,plan_name,credits,amount_cents,currency,paid_at,stripe_session_id&order=paid_at.desc&limit=1`,
-    { headers: supabaseHeaders(serviceKey) }
-  );
+async function fetchSupabaseRows(supabaseUrl, serviceKey, table, params) {
+  const url = new URL(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/${table}`);
+  Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetch(url.toString(), { headers: supabaseHeaders(serviceKey) });
   const payload = await parseJsonSafe(response);
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || `supabase_checkout_${response.status}`);
+    throw new Error(payload?.message || payload?.error || `supabase_${table}_${response.status}`);
   }
-  return Array.isArray(payload) ? payload[0] || null : null;
+  return Array.isArray(payload) ? payload : [];
+}
+
+function parseMetadata(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeCheckoutPurchase(row) {
+  if (!row) return null;
+  return {
+    plan_key: row.plan_key || '',
+    plan_name: row.plan_name || '',
+    credits: row.credits ?? null,
+    amount_cents: row.amount_cents ?? null,
+    currency: row.currency || 'usd',
+    paid_at: row.paid_at || row.credited_at || row.created_at || null,
+    stripe_session_id: row.stripe_session_id || ''
+  };
+}
+
+function normalizeTransactionPurchase(transaction, account) {
+  if (!transaction && !account?.last_plan_name) return null;
+  const metadata = parseMetadata(transaction?.metadata);
+  return {
+    plan_key: account?.last_plan_key || metadata.plan_key || '',
+    plan_name: account?.last_plan_name || metadata.plan_name || (transaction ? 'Credit purchase' : ''),
+    credits: transaction?.credits_delta ?? null,
+    amount_cents: metadata.amount_total ?? metadata.amount_cents ?? null,
+    currency: metadata.currency || 'usd',
+    paid_at: account?.last_purchase_at || transaction?.created_at || null,
+    stripe_session_id: account?.last_stripe_session_id || transaction?.stripe_session_id || ''
+  };
+}
+
+async function getCheckoutBySessionId(supabaseUrl, serviceKey, sessionId) {
+  const id = String(sessionId || '').trim();
+  if (!id) return null;
+  const rows = await fetchSupabaseRows(supabaseUrl, serviceKey, 'stripe_checkout_sessions', {
+    stripe_session_id: `eq.${id}`,
+    select: 'plan_key,plan_name,credits,amount_cents,currency,paid_at,credited_at,created_at,stripe_session_id',
+    limit: '1'
+  });
+  return normalizeCheckoutPurchase(rows[0]);
+}
+
+async function getLastCheckout(supabaseUrl, serviceKey, uid) {
+  const rows = await fetchSupabaseRows(supabaseUrl, serviceKey, 'stripe_checkout_sessions', {
+    firebase_uid: `eq.${uid}`,
+    or: '(status.eq.paid,payment_status.eq.paid,paid_at.not.is.null,credited_at.not.is.null)',
+    select: 'plan_key,plan_name,credits,amount_cents,currency,paid_at,credited_at,created_at,stripe_session_id',
+    order: 'paid_at.desc.nullslast,created_at.desc',
+    limit: '1'
+  });
+  return normalizeCheckoutPurchase(rows[0]);
+}
+
+async function getLastPurchase(supabaseUrl, serviceKey, uid, account, transactions) {
+  const sessionPurchase = await getCheckoutBySessionId(supabaseUrl, serviceKey, account?.last_stripe_session_id).catch(() => null);
+  if (sessionPurchase?.plan_name) return sessionPurchase;
+
+  const latestCheckout = await getLastCheckout(supabaseUrl, serviceKey, uid).catch(() => null);
+  if (latestCheckout?.plan_name) return latestCheckout;
+
+  const purchaseTransaction = (transactions || []).find((item) => item?.type === 'purchase') || null;
+  return normalizeTransactionPurchase(purchaseTransaction, account);
 }
 
 async function handler(req, res) {
@@ -261,13 +331,20 @@ async function handler(req, res) {
 
     if (action === 'get_account') {
       const account = await ensureUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
-      const [freshAccount, last_purchase, credit_transactions] = await Promise.all([
+      const [freshAccount, credit_transactions] = await Promise.all([
         getUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid),
-        getLastCheckout(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid).catch(() => null),
         getCreditTransactions(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth.uid, req.body?.limit || 8).catch(() => [])
       ]);
+      const responseAccount = freshAccount || account;
+      const last_purchase = await getLastPurchase(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY,
+        auth.uid,
+        responseAccount,
+        credit_transactions
+      );
       return res.status(200).json({
-        account: freshAccount || account,
+        account: responseAccount,
         last_purchase,
         credit_transactions
       });
