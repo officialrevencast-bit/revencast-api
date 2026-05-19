@@ -146,7 +146,6 @@ async function logWebhookEvent(supabaseUrl, serviceKey, event, status, error = '
         event_type: event.type,
         status,
         error: error ? String(error).slice(0, 1000) : null,
-        raw_event: event,
         processed_at: new Date().toISOString()
       })
     }
@@ -219,8 +218,7 @@ async function handleCheckoutPaid(session) {
       amount_cents: Number(session.amount_total || 0),
       currency: String(session.currency || 'usd'),
       status: 'pending',
-      payment_status: session.payment_status || 'unpaid',
-      raw_session: session
+      payment_status: session.payment_status || 'unpaid'
     });
   }
 
@@ -232,14 +230,10 @@ async function handleCheckoutPaid(session) {
   }
 
   await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
-    firebase_uid: uid,
     status: 'paid',
     payment_status: session.payment_status || 'paid',
-    stripe_payment_intent_id: session.payment_intent || null,
-    stripe_customer_id: session.customer || null,
     paid_at: new Date().toISOString(),
-    credited_at: alreadyCredited ? row.credited_at : new Date().toISOString(),
-    credits_balance_after: creditResult?.credits_balance ?? row?.credits_balance_after ?? null
+    credited_at: alreadyCredited ? row.credited_at : new Date().toISOString()
   });
 
   // Send confirmation email (idempotent - only send once per session)
@@ -273,8 +267,7 @@ async function handleCheckoutStatus(session, status) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !sessionId) return;
   await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
     status,
-    payment_status: session.payment_status || status,
-    raw_session: session
+    payment_status: session.payment_status || status
   });
 }
 
