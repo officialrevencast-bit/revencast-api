@@ -239,8 +239,7 @@ async function handleCheckoutPaid(session) {
     stripe_customer_id: session.customer || null,
     paid_at: new Date().toISOString(),
     credited_at: alreadyCredited ? row.credited_at : new Date().toISOString(),
-    credits_balance_after: creditResult?.credits_balance ?? row?.credits_balance_after ?? null,
-    raw_session: session
+    credits_balance_after: creditResult?.credits_balance ?? row?.credits_balance_after ?? null
   });
 
   // Send confirmation email (idempotent - only send once per session)
@@ -251,9 +250,14 @@ async function handleCheckoutPaid(session) {
     if (customerEmail) {
       try {
         await sendConfirmationEmail(customerEmail, planName);
-        await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
-          email_sent_at: new Date().toISOString()
-        });
+        try {
+          await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
+            email_sent_at: new Date().toISOString()
+          });
+        } catch (updateErr) {
+          // If email_sent_at column doesn't exist yet, just log and continue
+          console.error('Could not update email_sent_at (column may not exist yet):', updateErr?.message || updateErr);
+        }
       } catch (emailErr) {
         // Log email error but don't fail the entire webhook - credits are already granted
         console.error('Failed to send confirmation email:', emailErr?.message || emailErr);
