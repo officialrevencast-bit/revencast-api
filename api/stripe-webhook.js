@@ -174,13 +174,59 @@ async function sendConfirmationEmail(customerEmail, planName) {
       to: customerEmail,
       subject: 'Payment Confirmation - Revencast Credits Received',
       html: `
-        <h2>Payment Confirmed!</h2>
-        <p>Thank you for your purchase.</p>
-        <p>Your <strong>${planName || 'credits'}</strong> plan has been activated and credits have been added to your account.</p>
-        <p>You can now use your credits to generate market validation reports on Revencast.</p>
-        <p>If you have any questions, feel free to contact our support team.</p>
-        <br>
-        <p>Best regards,<br>The Revencast Team</p>
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333;">
+            <!-- Header with Logo -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 28px;">Revencast</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Market Validation & Revenue Forecasting</p>
+            </div>
+      
+            <!-- Main Content -->
+            <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+              <h2 style="color: #667eea; margin-bottom: 20px;">Payment Confirmed! 🎉</h2>
+              
+              <p style="font-size: 16px; margin-bottom: 20px;">
+                Thank you for your purchase. Your <strong>${planName || 'credits'}</strong> plan has been activated and credits have been added to your account.
+              </p>
+      
+              <div style="background: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 30px 0; border-radius: 4px;">
+                <p style="margin: 0; color: #667eea; font-weight: 600;">You can now:</p>
+                <ul style="margin: 15px 0 0 0; padding-left: 20px;">
+                  <li style="margin-bottom: 8px;">Generate unlimited market validation reports</li>
+                  <li style="margin-bottom: 8px;">Access AI-powered competitive analysis</li>
+                  <li style="margin-bottom: 8px;">Get real-time trend data and insights</li>
+                </ul>
+              </div>
+      
+              <!-- CTA Button -->
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="https://revencast.com/dashboard" style="background: #667eea; color: white; padding: 12px 40px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
+                  Go to Dashboard
+                </a>
+              </div>
+      
+              <p style="font-size: 14px; color: #666; margin-top: 30px;">
+                If you have any questions, feel free to reach out to our support team at <a href="mailto:support@revencast.com" style="color: #667eea; text-decoration: none;">support@revencast.com</a>
+              </p>
+            </div>
+      
+            <!-- Footer -->
+            <div style="background: #f8f9fa; padding: 30px 20px; text-align: center; border-top: 1px solid #eee; font-size: 12px; color: #999;">
+              <p style="margin: 0 0 15px 0;">
+                <a href="https://revencast.com" style="color: #667eea; text-decoration: none; margin: 0 15px;">Website</a>
+                <a href="https://twitter.com/revencast" style="color: #667eea; text-decoration: none; margin: 0 15px;">Twitter</a>
+                <a href="https://linkedin.com/company/revencast" style="color: #667eea; text-decoration: none; margin: 0 15px;">LinkedIn</a>
+              </p>
+              <p style="margin: 0;">© 2026 Revencast. All rights reserved.</p>
+            </div>
+          </body>
+        </html>
       `
     })
   });
