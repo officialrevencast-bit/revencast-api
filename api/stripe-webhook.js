@@ -157,6 +157,41 @@ async function logWebhookEvent(supabaseUrl, serviceKey, event, status, error = '
   }
 }
 
+async function sendConfirmationEmail(customerEmail, planName) {
+  const RESEND_API_KEY = getEnv('RESEND_API_KEY');
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not configured');
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${RESEND_API_KEY}`
+    },
+    body: JSON.stringify({
+      from: 'noreply@support.revencast.com',
+      to: customerEmail,
+      subject: 'Payment Confirmation - Revencast Credits Received',
+      html: `
+        <h2>Payment Confirmed!</h2>
+        <p>Thank you for your purchase.</p>
+        <p>Your <strong>${planName || 'credits'}</strong> plan has been activated and credits have been added to your account.</p>
+        <p>You can now use your credits to generate market validation reports on Revencast.</p>
+        <p>If you have any questions, feel free to contact our support team.</p>
+        <br>
+        <p>Best regards,<br>The Revencast Team</p>
+      `
+    })
+  });
+
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `resend_${response.status}`);
+  }
+  return payload;
+}
+
 async function handleCheckoutPaid(session) {
   const SUPABASE_URL = getEnv('SUPABASE_URL');
   const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
@@ -206,6 +241,24 @@ async function handleCheckoutPaid(session) {
     credits_balance_after: creditResult?.credits_balance ?? row?.credits_balance_after ?? null,
     raw_session: session
   });
+
+  // Send confirmation email (idempotent - only send once per session)
+  const alreadyEmailed = Boolean(row?.email_sent_at);
+  if (!alreadyEmailed) {
+    const customerEmail = String(session?.customer_details?.email || '').trim();
+    const planName = String(metadata.plan_name || 'credits');
+    if (customerEmail) {
+      try {
+        await sendConfirmationEmail(customerEmail, planName);
+        await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
+          email_sent_at: new Date().toISOString()
+        });
+      } catch (emailErr) {
+        // Log email error but don't fail the entire webhook - credits are already granted
+        console.error('Failed to send confirmation email:', emailErr?.message || emailErr);
+      }
+    }
+  }
 }
 
 async function handleCheckoutStatus(session, status) {
