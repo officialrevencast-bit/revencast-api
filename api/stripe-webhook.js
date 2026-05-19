@@ -167,7 +167,8 @@ async function sendConfirmationEmail(customerEmail, planName) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${RESEND_API_KEY}`
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'User-Agent': 'Revencast/1.0'
     },
     body: JSON.stringify({
       from: 'noreply@support.revencast.com',
