@@ -84,6 +84,7 @@ async function rpc(supabaseUrl, serviceKey, functionName, body) {
 async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
   const displayName = String(body?.display_name || body?.name || '').trim();
   const email = String(body?.email || '').trim();
+  const companyName = String(body?.company_name || body?.company || '').trim();
   const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?on_conflict=firebase_uid`, {
     method: 'POST',
     headers: supabaseHeaders(serviceKey, 'resolution=merge-duplicates,return=representation'),
@@ -91,12 +92,62 @@ async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
       firebase_uid: auth.uid,
       ...(email ? { email } : {}),
       ...(displayName ? { display_name: displayName } : {}),
+      ...(companyName ? { company_name: companyName } : {}),
       updated_at: new Date().toISOString()
     })
   });
   const payload = await parseJsonSafe(response);
   if (!response.ok) {
     throw new Error(payload?.message || payload?.error || `supabase_account_${response.status}`);
+  }
+  return Array.isArray(payload) ? payload[0] : payload;
+}
+
+async function updateUserAccountProfile(supabaseUrl, serviceKey, auth, body = {}) {
+  const displayName = String(body?.display_name || body?.name || '').trim().replace(/\s+/g, ' ');
+  const companyName = String(body?.company_name || body?.company || '').trim().replace(/\s+/g, ' ');
+  const email = String(body?.email || '').trim();
+
+  if (displayName.length < 2) {
+    const err = new Error('Name must be at least 2 characters.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (displayName.length > 80) {
+    const err = new Error('Name must be 80 characters or less.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (companyName.length > 120) {
+    const err = new Error('Company name must be 120 characters or less.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  await ensureUserAccount(supabaseUrl, serviceKey, auth, {
+    email,
+    display_name: displayName,
+    company_name: companyName
+  });
+
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(auth.uid)}&select=*`,
+    {
+      method: 'PATCH',
+      headers: supabaseHeaders(serviceKey, 'return=representation'),
+      body: JSON.stringify({
+        display_name: displayName,
+        company_name: companyName || null,
+        updated_at: new Date().toISOString()
+      })
+    }
+  );
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    const message = payload?.message || payload?.error || `supabase_account_update_${response.status}`;
+    const err = new Error(message);
+    err.statusCode = response.status;
+    throw err;
   }
   return Array.isArray(payload) ? payload[0] : payload;
 }
@@ -350,6 +401,17 @@ async function handler(req, res) {
       });
     }
 
+    if (action === 'update_account_profile') {
+      try {
+        const account = await updateUserAccountProfile(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
+        return res.status(200).json({ account });
+      } catch (err) {
+        return res.status(err?.statusCode || 500).json({
+          error: err?.message || 'Unable to update profile'
+        });
+      }
+    }
+
     if (action === 'consume_simulation_credit') {
       await ensureUserAccount(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
       let result;
@@ -593,7 +655,7 @@ async function handler(req, res) {
       return res.status(200).json({ ok: true, user_message_count });
     }
 
-    return res.status(400).json({ error: 'Unknown action' });
+    return res.status(400).json({ error: `Unknown action: ${String(action).slice(0, 80)}` });
   } catch (err) {
     // Ensure CORS headers are present even in unexpected error paths.
     setCors(res, 'GET, POST, OPTIONS');
