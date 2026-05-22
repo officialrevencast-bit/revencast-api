@@ -208,7 +208,9 @@ function normalizeCheckoutPurchase(row) {
     amount_cents: row.amount_cents ?? null,
     currency: row.currency || 'usd',
     paid_at: row.paid_at || row.credited_at || row.created_at || null,
-    stripe_session_id: row.stripe_session_id || ''
+    stripe_session_id: row.stripe_session_id || '',
+    status: row.status || '',
+    payment_status: row.payment_status || ''
   };
 }
 
@@ -231,10 +233,10 @@ async function getCheckoutBySessionId(supabaseUrl, serviceKey, sessionId) {
   if (!id) return null;
   const rows = await fetchSupabaseRows(supabaseUrl, serviceKey, 'stripe_checkout_sessions', {
     stripe_session_id: `eq.${id}`,
-    select: 'plan_key,plan_name,credits,amount_cents,currency,paid_at,credited_at,created_at,stripe_session_id',
+    select: 'firebase_uid,plan_key,plan_name,credits,amount_cents,currency,paid_at,credited_at,created_at,stripe_session_id,status,payment_status',
     limit: '1'
   });
-  return normalizeCheckoutPurchase(rows[0]);
+  return rows[0] || null;
 }
 
 async function getLastCheckout(supabaseUrl, serviceKey, uid) {
@@ -250,7 +252,7 @@ async function getLastCheckout(supabaseUrl, serviceKey, uid) {
 
 async function getLastPurchase(supabaseUrl, serviceKey, uid, account, transactions) {
   const sessionPurchase = await getCheckoutBySessionId(supabaseUrl, serviceKey, account?.last_stripe_session_id).catch(() => null);
-  if (sessionPurchase?.plan_name) return sessionPurchase;
+  if (sessionPurchase?.plan_name) return normalizeCheckoutPurchase(sessionPurchase);
 
   const latestCheckout = await getLastCheckout(supabaseUrl, serviceKey, uid).catch(() => null);
   if (latestCheckout?.plan_name) return latestCheckout;
@@ -399,6 +401,18 @@ async function handler(req, res) {
         last_purchase,
         credit_transactions
       });
+    }
+
+    if (action === 'get_checkout_confirmation') {
+      const sessionId = String(req.body?.session_id || '').trim();
+      if (!sessionId) return res.status(400).json({ error: 'session_id is required' });
+
+      const row = await getCheckoutBySessionId(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId);
+      if (!row) return res.status(404).json({ error: 'Checkout session not found' });
+      if (String(row.firebase_uid || '') !== String(auth.uid || '')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      return res.status(200).json({ purchase: normalizeCheckoutPurchase(row) });
     }
 
     if (action === 'update_account_profile') {
