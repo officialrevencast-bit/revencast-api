@@ -177,6 +177,52 @@ async function getCreditTransactions(supabaseUrl, serviceKey, uid, limit = 10) {
   return Array.isArray(payload) ? payload : [];
 }
 
+async function claimFreePreview(supabaseUrl, serviceKey, auth, body = {}) {
+  await ensureUserAccount(supabaseUrl, serviceKey, auth, body);
+  const now = new Date().toISOString();
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(auth.uid)}&credits_balance=eq.0&total_credits_purchased=eq.0&total_credits_used=eq.0&free_preview_used_at=is.null&select=*`,
+    {
+      method: 'PATCH',
+      headers: supabaseHeaders(serviceKey, 'return=representation'),
+      body: JSON.stringify({
+        free_preview_used_at: now,
+        updated_at: now
+      })
+    }
+  );
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    const message = payload?.message || payload?.error || `supabase_preview_${response.status}`;
+    const err = new Error(message);
+    err.statusCode = response.status;
+    throw err;
+  }
+
+  const claimed = Array.isArray(payload) ? payload[0] : payload;
+  if (claimed) {
+    return {
+      allowed: true,
+      account: claimed,
+      credits_balance: Number(claimed?.credits_balance || 0),
+      free_preview_used_at: claimed?.free_preview_used_at || now
+    };
+  }
+
+  const account = await getUserAccount(supabaseUrl, serviceKey, auth.uid);
+  return {
+    allowed: false,
+    account,
+    credits_balance: Number(account?.credits_balance || 0),
+    free_preview_used_at: account?.free_preview_used_at || null,
+    reason: Number(account?.credits_balance || 0) > 0
+      ? 'credits_available'
+      : Number(account?.total_credits_purchased || 0) > 0 || Number(account?.total_credits_used || 0) > 0
+        ? 'not_new_account'
+        : 'preview_already_used'
+  };
+}
+
 async function fetchSupabaseRows(supabaseUrl, serviceKey, table, params) {
   const url = new URL(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/${table}`);
   Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
@@ -413,6 +459,18 @@ async function handler(req, res) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       return res.status(200).json({ purchase: normalizeCheckoutPurchase(row) });
+    }
+
+    if (action === 'claim_free_preview') {
+      try {
+        const preview = await claimFreePreview(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
+        const status = preview.allowed ? 200 : 409;
+        return res.status(status).json({ preview });
+      } catch (err) {
+        return res.status(err?.statusCode || 500).json({
+          error: err?.message || 'Unable to claim free preview'
+        });
+      }
     }
 
     if (action === 'update_account_profile') {
