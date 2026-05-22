@@ -76,6 +76,15 @@ function getOrigin(req) {
   return host ? `${proto}://${host}` : 'https://www.revencast.com';
 }
 
+function getCheckoutReturnContext(body = {}) {
+  const requested = String(body?.return_context || body?.checkout_context || 'default').trim();
+  if (requested === 'simulation_resume') {
+    const draftId = String(body?.draft_id || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+    return { context: 'simulation_resume', draftId };
+  }
+  return { context: 'default', draftId: '' };
+}
+
 async function parseStripeJson(response) {
   const text = await response.text().catch(() => '');
   try {
@@ -85,10 +94,18 @@ async function parseStripeJson(response) {
   }
 }
 
-function buildCheckoutForm({ plan, auth, origin }) {
+function buildCheckoutForm({ plan, auth, origin, returnContext }) {
   const params = new URLSearchParams();
+  const successUrl = new URL(`${origin}/pricing`);
+  successUrl.searchParams.set('checkout', 'success');
+  successUrl.searchParams.set('session_id', '{CHECKOUT_SESSION_ID}');
+  if (returnContext?.context === 'simulation_resume') {
+    successUrl.searchParams.set('return_context', 'simulation_resume');
+    if (returnContext.draftId) successUrl.searchParams.set('draft_id', returnContext.draftId);
+  }
+
   params.set('mode', 'payment');
-  params.set('success_url', `${origin}/pricing?checkout=success&session_id={CHECKOUT_SESSION_ID}`);
+  params.set('success_url', successUrl.toString().replace('%7BCHECKOUT_SESSION_ID%7D', '{CHECKOUT_SESSION_ID}'));
   params.set('cancel_url', `${origin}/pricing?checkout=cancelled`);
   params.set('client_reference_id', auth.uid);
   params.set('line_items[0][quantity]', '1');
@@ -103,9 +120,12 @@ function buildCheckoutForm({ plan, auth, origin }) {
   params.set('metadata[plan_key]', plan.plan_key);
   params.set('metadata[plan_name]', plan.plan_name);
   params.set('metadata[credits]', String(plan.credits));
+  params.set('metadata[return_context]', returnContext?.context || 'default');
+  if (returnContext?.draftId) params.set('metadata[draft_id]', returnContext.draftId);
   params.set('payment_intent_data[metadata][firebase_uid]', auth.uid);
   params.set('payment_intent_data[metadata][plan_key]', plan.plan_key);
   params.set('payment_intent_data[metadata][credits]', String(plan.credits));
+  params.set('payment_intent_data[metadata][return_context]', returnContext?.context || 'default');
   return params;
 }
 
@@ -162,13 +182,14 @@ module.exports = async function handler(req, res) {
     if (!plan) return res.status(400).json({ error: 'Unknown plan' });
 
     const origin = getOrigin(req);
+    const returnContext = getCheckoutReturnContext(req.body || {});
     const stripeResp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: buildCheckoutForm({ plan, auth, origin })
+      body: buildCheckoutForm({ plan, auth, origin, returnContext })
     });
 
     const session = await parseStripeJson(stripeResp);
