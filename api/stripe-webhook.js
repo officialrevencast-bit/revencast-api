@@ -247,7 +247,7 @@ async function sendConfirmationEmail(customerEmail, purchase) {
       'User-Agent': 'Revencast/1.0'
     },
     body: JSON.stringify({
-      from: 'noreply@support.revencast.com',
+      from: 'noreply@revencast.com',
       to: customerEmail,
       subject: `Payment confirmed: ${purchase?.planName || 'Revencast credits'}`,
       html: buildConfirmationEmailHtml(purchase),
