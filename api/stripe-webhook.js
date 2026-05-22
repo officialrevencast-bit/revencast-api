@@ -156,7 +156,84 @@ async function logWebhookEvent(supabaseUrl, serviceKey, event, status, error = '
   }
 }
 
-async function sendConfirmationEmail(customerEmail, planName) {
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatCreditsLabel(value) {
+  const count = Math.max(0, Math.floor(Number(value) || 0));
+  return `${count} report credit${count === 1 ? '' : 's'}`;
+}
+
+function formatAmountLabel(cents, currency = 'usd') {
+  const amount = Number(cents || 0) / 100;
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: String(currency || 'usd').toUpperCase()
+    }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
+
+function buildConfirmationEmailHtml({ planName, credits, amountCents, currency }) {
+  const safePlanName = escapeHtml(planName || 'Revencast credits');
+  const safeCredits = escapeHtml(formatCreditsLabel(credits));
+  const safeAmount = escapeHtml(formatAmountLabel(amountCents, currency));
+
+  return `
+    <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:Segoe UI,Arial,sans-serif;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:32px 16px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;">
+              <tr>
+                <td style="padding:28px 28px 18px;background:linear-gradient(135deg,rgba(94,211,243,.18),rgba(22,117,169,.10));">
+                  <div style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#5ed3f3;font-weight:800;">Revencast</div>
+                  <h1 style="margin:14px 0 0;font-size:28px;line-height:1.2;color:#ffffff;">Payment confirmed</h1>
+                  <p style="margin:10px 0 0;color:#b0b0b0;font-size:15px;line-height:1.6;">Your report credits have been added to your account.</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:26px 28px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 10px;">
+                    <tr>
+                      <td style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#b0b0b0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Plan</td>
+                      <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safePlanName}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#b0b0b0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Credits</td>
+                      <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safeCredits}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#b0b0b0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Amount paid</td>
+                      <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safeAmount}</td>
+                    </tr>
+                  </table>
+                  <p style="margin:18px 0 0;color:#b0b0b0;font-size:14px;line-height:1.7;">Each report credit can be used to generate one Revencast market validation report with the sections included in your pricing plan.</p>
+                  <a href="https://revencast.com/dashboard" style="display:inline-block;margin-top:22px;padding:13px 18px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;">Go to dashboard</a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:18px 28px;border-top:1px solid rgba(255,255,255,.08);color:#7f8b99;font-size:12px;line-height:1.6;">
+                  Questions? Contact support@revencast.com. This email is a confirmation of your Revencast credit purchase.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+async function sendConfirmationEmail(customerEmail, purchase) {
   const RESEND_API_KEY = getEnv('RESEND_API_KEY');
   if (!RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY is not configured');
@@ -172,62 +249,16 @@ async function sendConfirmationEmail(customerEmail, planName) {
     body: JSON.stringify({
       from: 'noreply@support.revencast.com',
       to: customerEmail,
-      subject: 'Payment Confirmation - Revencast Credits Received',
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333;">
-            <!-- Header with Logo -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
-              <h1 style="color: white; margin: 0; font-size: 28px;">Revencast</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Market Validation & Revenue Forecasting</p>
-            </div>
-      
-            <!-- Main Content -->
-            <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-              <h2 style="color: #667eea; margin-bottom: 20px;">Payment Confirmed! 🎉</h2>
-              
-              <p style="font-size: 16px; margin-bottom: 20px;">
-                Thank you for your purchase. Your <strong>${planName || 'credits'}</strong> plan has been activated and credits have been added to your account.
-              </p>
-      
-              <div style="background: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 30px 0; border-radius: 4px;">
-                <p style="margin: 0; color: #667eea; font-weight: 600;">You can now:</p>
-                <ul style="margin: 15px 0 0 0; padding-left: 20px;">
-                  <li style="margin-bottom: 8px;">Generate unlimited market validation reports</li>
-                  <li style="margin-bottom: 8px;">Access AI-powered competitive analysis</li>
-                  <li style="margin-bottom: 8px;">Get real-time trend data and insights</li>
-                </ul>
-              </div>
-      
-              <!-- CTA Button -->
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="https://revencast.com/dashboard" style="background: #667eea; color: white; padding: 12px 40px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">
-                  Go to Dashboard
-                </a>
-              </div>
-      
-              <p style="font-size: 14px; color: #666; margin-top: 30px;">
-                If you have any questions, feel free to reach out to our support team at <a href="mailto:support@revencast.com" style="color: #667eea; text-decoration: none;">support@revencast.com</a>
-              </p>
-            </div>
-      
-            <!-- Footer -->
-            <div style="background: #f8f9fa; padding: 30px 20px; text-align: center; border-top: 1px solid #eee; font-size: 12px; color: #999;">
-              <p style="margin: 0 0 15px 0;">
-                <a href="https://revencast.com" style="color: #667eea; text-decoration: none; margin: 0 15px;">Website</a>
-                <a href="https://twitter.com/revencast" style="color: #667eea; text-decoration: none; margin: 0 15px;">Twitter</a>
-                <a href="https://linkedin.com/company/revencast" style="color: #667eea; text-decoration: none; margin: 0 15px;">LinkedIn</a>
-              </p>
-              <p style="margin: 0;">© 2026 Revencast. All rights reserved.</p>
-            </div>
-          </body>
-        </html>
-      `
+      subject: `Payment confirmed: ${purchase?.planName || 'Revencast credits'}`,
+      html: buildConfirmationEmailHtml(purchase),
+      text: [
+        'Payment confirmed',
+        `Plan: ${purchase?.planName || 'Revencast credits'}`,
+        `Credits: ${formatCreditsLabel(purchase?.credits)}`,
+        `Amount paid: ${formatAmountLabel(purchase?.amountCents, purchase?.currency)}`,
+        'Each report credit can be used to generate one Revencast market validation report.',
+        'Dashboard: https://revencast.com/dashboard'
+      ].join('\n')
     })
   });
 
@@ -270,9 +301,8 @@ async function handleCheckoutPaid(session) {
 
   const row = existing || await getCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId);
   const alreadyCredited = Boolean(row?.credited_at);
-  let creditResult = null;
   if (!alreadyCredited) {
-    creditResult = await grantSupabaseCredits(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, session);
+    await grantSupabaseCredits(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, session);
   }
 
   await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
@@ -286,10 +316,15 @@ async function handleCheckoutPaid(session) {
   const alreadyEmailed = Boolean(row?.email_sent_at);
   if (!alreadyEmailed) {
     const customerEmail = String(session?.customer_details?.email || '').trim();
-    const planName = String(metadata.plan_name || 'credits');
+    const planName = String(metadata.plan_name || row?.plan_name || 'Revencast credits');
     if (customerEmail) {
       try {
-        await sendConfirmationEmail(customerEmail, planName);
+        await sendConfirmationEmail(customerEmail, {
+          planName,
+          credits,
+          amountCents: Number(session.amount_total || row?.amount_cents || 0),
+          currency: String(session.currency || row?.currency || 'usd')
+        });
         try {
           await updateCheckoutRow(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, sessionId, {
             email_sent_at: new Date().toISOString()
