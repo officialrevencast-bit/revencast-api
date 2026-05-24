@@ -372,9 +372,8 @@ async function handler(req, res) {
         call1_json: req.body?.call1_json ?? null,
         call2_json: req.body?.call2_json ?? null,
         call3_json: req.body?.call3_json ?? null,
-        call5_json: req.body?.call5_json ?? null,
         merged_json: req.body?.merged_json ?? null,
-        pdf_report_json: req.body?.pdf_report_json ?? null,
+        pdf_report_json: req.body?.pdf_report_json ?? null, // ← ADD THIS LINE
         call1_raw: req.body?.call1_raw ?? null,
         call2_raw: req.body?.call2_raw ?? null,
         call3_raw: req.body?.call3_raw ?? null,
@@ -399,16 +398,12 @@ async function handler(req, res) {
       if (!response.ok) {
         const message = String(payload?.message || payload?.error || '').toLowerCase();
         const missingCall3Columns = message.includes('call3_json') || message.includes('call3_raw');
-        const missingCall5Columns = message.includes('call5_json');
         const missingForumColumns = message.includes('forum_json') || message.includes('forum_raw');
-        if (missingCall3Columns || missingCall5Columns || missingForumColumns) {
+        if (missingCall3Columns || missingForumColumns) {
           const fallbackRow = { ...row };
           if (missingCall3Columns) {
             delete fallbackRow.call3_json;
             delete fallbackRow.call3_raw;
-          }
-          if (missingCall5Columns) {
-            delete fallbackRow.call5_json;
           }
           if (missingForumColumns) {
             delete fallbackRow.forum_json;
