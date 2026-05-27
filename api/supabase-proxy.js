@@ -793,7 +793,7 @@ async function handler(req, res) {
       if (action === 'admin_overview') {
         const [users, reports, credits, webhooks] = await Promise.all([
           fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
-            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,last_sign_in_at',
+            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance',
             order: 'created_at.desc',
             limit: '5000'
           }),
@@ -857,7 +857,7 @@ async function handler(req, res) {
         const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 25;
         const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
         const rows = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
-          select: 'firebase_uid,email,display_name,company_name,created_at,updated_at,last_sign_in_at,credits_balance,total_credits_purchased,total_credits_used',
+          select: 'firebase_uid,email,display_name,company_name,created_at,updated_at,credits_balance,total_credits_purchased,total_credits_used',
           order: 'created_at.desc',
           limit: '5000'
         });
