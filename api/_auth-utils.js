@@ -57,10 +57,11 @@ export async function authorizeRequest(req, res, options = {}) {
           const auth = getFirebaseAuthClient();
           const decoded = await auth.verifyIdToken(token);
           const uid = String(decoded.uid || decoded.user_id || decoded.sub || '').trim();
+          const email = String(decoded.email || '').trim().toLowerCase();
           if (!uid) {
             return res.status(401).json({ error: 'Unauthorized' });
           }
-          return { ok: true, mode: 'bearer', uid };
+          return { ok: true, mode: 'bearer', uid, email, decoded };
         } catch {
           return res.status(401).json({ error: 'Unauthorized' });
         }
