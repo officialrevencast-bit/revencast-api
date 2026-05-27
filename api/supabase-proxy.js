@@ -245,6 +245,64 @@ function parseMetadata(value) {
   }
 }
 
+function isAdminEmail(email) {
+  return String(email || '').trim().toLowerCase() === 'nomanromane@gmail.com';
+}
+
+function dateOnlyIso(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function bucketByDay(rows, getDateValue) {
+  const out = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const day = dateOnlyIso(getDateValue(row));
+    if (!day) return;
+    out.set(day, (out.get(day) || 0) + 1);
+  });
+  return [...out.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, value]) => ({ date, value }));
+}
+
+function buildRecentActivity({ reports = [], credits = [], users = [] }) {
+  const events = [];
+  reports.forEach((r) => {
+    events.push({
+      type: 'report',
+      title: `Report generated: ${String(r?.idea_name || 'Untitled idea')}`,
+      subtitle: String(r?.target_country || ''),
+      user_id: String(r?.user_id || ''),
+      at: r?.created_at || null
+    });
+  });
+  credits.forEach((t) => {
+    const delta = Number(t?.credits_delta || 0);
+    events.push({
+      type: 'credit',
+      title: `Credit ${delta >= 0 ? 'added' : 'deducted'}: ${delta}`,
+      subtitle: String(t?.type || 'transaction'),
+      user_id: String(t?.firebase_uid || ''),
+      at: t?.created_at || null
+    });
+  });
+  users.forEach((u) => {
+    events.push({
+      type: 'user',
+      title: `New user: ${String(u?.display_name || u?.email || 'User')}`,
+      subtitle: String(u?.email || ''),
+      user_id: String(u?.firebase_uid || ''),
+      at: u?.created_at || null
+    });
+  });
+  return events
+    .filter((e) => e.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, 25);
+}
+
 function normalizeCheckoutPurchase(row) {
   if (!row) return null;
   return {
@@ -725,6 +783,334 @@ async function handler(req, res) {
 
       const user_message_count = existingUsers + 1;
       return res.status(200).json({ ok: true, user_message_count });
+    }
+
+    if (String(action || '').startsWith('admin_')) {
+      if (!isAdminEmail(auth?.email)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if (action === 'admin_overview') {
+        const [users, reports, credits, webhooks] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,last_sign_in_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,status,error,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'credit_transactions', {
+            select: 'id,firebase_uid,type,credits_delta,created_at,metadata',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
+            select: 'id,amount_cents,credits,currency,paid_at,created_at,status,payment_status,firebase_uid',
+            order: 'created_at.desc',
+            limit: '2000'
+          }).catch(() => [])
+        ]);
+
+        const now = Date.now();
+        const dayAgo = now - (24 * 60 * 60 * 1000);
+        const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
+        const activeDaily = users.filter((u) => new Date(u?.updated_at || u?.last_sign_in_at || 0).getTime() >= dayAgo).length;
+        const activeMonthly = users.filter((u) => new Date(u?.updated_at || u?.last_sign_in_at || 0).getTime() >= monthAgo).length;
+        const totalRevenueCents = webhooks
+          .filter((w) => String(w?.status || '').toLowerCase() === 'paid' || String(w?.payment_status || '').toLowerCase() === 'paid' || Boolean(w?.paid_at))
+          .reduce((sum, w) => sum + Number(w?.amount_cents || 0), 0);
+        const creditsUsed = credits
+          .filter((t) => Number(t?.credits_delta || 0) < 0)
+          .reduce((sum, t) => sum + Math.abs(Number(t?.credits_delta || 0)), 0);
+        const trendReports = bucketByDay(reports, (r) => r?.created_at);
+        const trendUsers = bucketByDay(users, (u) => u?.created_at);
+        const recentActivity = buildRecentActivity({
+          reports: reports.slice(0, 30),
+          credits: credits.slice(0, 30),
+          users: users.slice(0, 30)
+        });
+
+        return res.status(200).json({
+          metrics: {
+            total_users: users.length,
+            active_daily: activeDaily,
+            active_monthly: activeMonthly,
+            total_reports: reports.length,
+            total_revenue_cents: totalRevenueCents,
+            credits_used: creditsUsed
+          },
+          trends: {
+            reports_by_day: trendReports,
+            users_by_day: trendUsers
+          },
+          recent_activity: recentActivity
+        });
+      }
+
+      if (action === 'admin_list_users') {
+        const q = String(req.body?.query || '').trim().toLowerCase();
+        const limitRaw = Number(req.body?.limit ?? 25);
+        const offsetRaw = Number(req.body?.offset ?? 0);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+        const rows = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+          select: 'firebase_uid,email,display_name,company_name,created_at,updated_at,last_sign_in_at,credits_balance,total_credits_purchased,total_credits_used',
+          order: 'created_at.desc',
+          limit: '5000'
+        });
+        const filtered = q
+          ? rows.filter((u) => [u?.email, u?.display_name, u?.company_name, u?.firebase_uid].some((v) => String(v || '').toLowerCase().includes(q)))
+          : rows;
+        const paged = filtered.slice(offset, offset + limit);
+        return res.status(200).json({
+          users: paged,
+          total: filtered.length,
+          limit,
+          offset
+        });
+      }
+
+      if (action === 'admin_get_user_detail') {
+        const uid = String(req.body?.uid || '').trim();
+        if (!uid) return res.status(400).json({ error: 'uid is required' });
+        const [users, reports, credits] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            firebase_uid: `eq.${uid}`,
+            select: '*',
+            limit: '1'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            user_id: `eq.${uid}`,
+            select: 'id,idea_name,target_country,status,error,created_at',
+            order: 'created_at.desc',
+            limit: '100'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'credit_transactions', {
+            firebase_uid: `eq.${uid}`,
+            select: '*',
+            order: 'created_at.desc',
+            limit: '100'
+          }).catch(() => [])
+        ]);
+        const user = users[0] || null;
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        return res.status(200).json({ user, reports, credit_transactions: credits });
+      }
+
+      if (action === 'admin_update_user_credits') {
+        const uid = String(req.body?.uid || '').trim();
+        const delta = Number(req.body?.delta || 0);
+        const reason = String(req.body?.reason || 'admin_adjustment').trim().slice(0, 200);
+        if (!uid) return res.status(400).json({ error: 'uid is required' });
+        if (!Number.isFinite(delta) || delta === 0) return res.status(400).json({ error: 'delta must be a non-zero number' });
+
+        const users = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+          firebase_uid: `eq.${uid}`,
+          select: '*',
+          limit: '1'
+        });
+        const user = users[0];
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        const nextBalance = Math.max(0, Number(user?.credits_balance || 0) + delta);
+
+        const updateResp = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(uid)}&select=*`, {
+          method: 'PATCH',
+          headers: {
+            ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=representation')
+          },
+          body: JSON.stringify({
+            credits_balance: nextBalance,
+            updated_at: new Date().toISOString()
+          })
+        });
+        const updatePayload = await parseJsonSafe(updateResp);
+        if (!updateResp.ok) {
+          return res.status(500).json({ error: updatePayload?.message || updatePayload?.error || 'Failed to update credits' });
+        }
+
+        await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/credit_transactions`, {
+          method: 'POST',
+          headers: {
+            ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+          },
+          body: JSON.stringify({
+            firebase_uid: uid,
+            type: 'admin_adjustment',
+            credits_delta: delta,
+            metadata: {
+              reason,
+              admin_email: auth?.email || '',
+              previous_balance: Number(user?.credits_balance || 0),
+              next_balance: nextBalance
+            }
+          })
+        }).catch(() => null);
+
+        return res.status(200).json({
+          ok: true,
+          user: Array.isArray(updatePayload) ? updatePayload[0] : updatePayload
+        });
+      }
+
+      if (action === 'admin_list_reports') {
+        const q = String(req.body?.query || '').trim().toLowerCase();
+        const statusFilter = String(req.body?.status || '').trim().toLowerCase();
+        const from = String(req.body?.from || '').trim();
+        const to = String(req.body?.to || '').trim();
+        const limitRaw = Number(req.body?.limit ?? 50);
+        const offsetRaw = Number(req.body?.offset ?? 0);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+        const [reports, users] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,status,error,created_at,input,merged_json',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name',
+            limit: '5000'
+          })
+        ]);
+        const userById = new Map(users.map((u) => [String(u?.firebase_uid || ''), u]));
+        let rows = reports.map((r) => ({
+          ...r,
+          user_email: userById.get(String(r?.user_id || ''))?.email || '',
+          user_name: userById.get(String(r?.user_id || ''))?.display_name || ''
+        }));
+        if (q) {
+          rows = rows.filter((r) =>
+            [r?.idea_name, r?.target_country, r?.user_email, r?.user_name, r?.status].some((v) =>
+              String(v || '').toLowerCase().includes(q)
+            )
+          );
+        }
+        if (statusFilter) rows = rows.filter((r) => String(r?.status || '').toLowerCase() === statusFilter);
+        if (from) rows = rows.filter((r) => new Date(r?.created_at || 0).getTime() >= new Date(from).getTime());
+        if (to) rows = rows.filter((r) => new Date(r?.created_at || 0).getTime() <= new Date(to).getTime());
+        const paged = rows.slice(offset, offset + limit);
+        return res.status(200).json({ reports: paged, total: rows.length, limit, offset });
+      }
+
+      if (action === 'admin_get_report_detail') {
+        const reportId = String(req.body?.report_id || '').trim();
+        if (!reportId) return res.status(400).json({ error: 'report_id is required' });
+        const rows = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+          id: `eq.${reportId}`,
+          select: '*',
+          limit: '1'
+        });
+        const report = rows[0] || null;
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+        return res.status(200).json({ report });
+      }
+
+      if (action === 'admin_analytics') {
+        const [reports, users] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,created_at,status',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          })
+        ]);
+        const reportsByDay = bucketByDay(reports, (r) => r?.created_at);
+        const usersByDay = bucketByDay(users, (u) => u?.created_at);
+        const weeklyVisits = reportsByDay.slice(-7).reduce((sum, d) => sum + Number(d.value || 0), 0);
+        const monthlyVisits = reportsByDay.slice(-30).reduce((sum, d) => sum + Number(d.value || 0), 0);
+        const dailyVisits = reportsByDay.length ? Number(reportsByDay[reportsByDay.length - 1].value || 0) : 0;
+        return res.status(200).json({
+          summary: {
+            daily_visits: dailyVisits,
+            weekly_visits: weeklyVisits,
+            monthly_visits: monthlyVisits,
+            page_views: reports.length,
+            avg_session_duration_sec: null
+          },
+          charts: {
+            usage_by_day: reportsByDay,
+            users_by_day: usersByDay
+          },
+          breakdown: {
+            devices: [],
+            browsers: []
+          }
+        });
+      }
+
+      if (action === 'admin_list_errors') {
+        const [reports, webhooks] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,error,status,created_at',
+            order: 'created_at.desc',
+            limit: '1000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_webhook_events', {
+            select: 'id,error,event_type,created_at,status',
+            order: 'created_at.desc',
+            limit: '1000'
+          }).catch(() => [])
+        ]);
+        const reportErrors = reports
+          .filter((r) => String(r?.error || '').trim())
+          .map((r) => ({
+            source: 'report',
+            id: String(r?.id || ''),
+            message: String(r?.error || ''),
+            severity: String(r?.status || '').toLowerCase() === 'failed' ? 'critical' : 'warning',
+            user_id: String(r?.user_id || ''),
+            route: '/simulation',
+            created_at: r?.created_at || null,
+            resolved: false
+          }));
+        const webhookErrors = webhooks
+          .filter((w) => String(w?.error || '').trim())
+          .map((w) => ({
+            source: 'webhook',
+            id: String(w?.id || ''),
+            message: String(w?.error || ''),
+            severity: 'warning',
+            user_id: '',
+            route: '/api/stripe-webhook',
+            created_at: w?.created_at || null,
+            resolved: false
+          }));
+        const errors = [...reportErrors, ...webhookErrors]
+          .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+        return res.status(200).json({ errors });
+      }
+
+      if (action === 'admin_resolve_error') {
+        const source = String(req.body?.source || '').trim();
+        const id = String(req.body?.id || '').trim();
+        if (!source || !id) return res.status(400).json({ error: 'source and id are required' });
+
+        if (source === 'report') {
+          const resp = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(id)}&select=id,error,status`, {
+            method: 'PATCH',
+            headers: {
+              ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=representation')
+            },
+            body: JSON.stringify({
+              error: null,
+              updated_at: new Date().toISOString()
+            })
+          });
+          const payload = await parseJsonSafe(resp);
+          if (!resp.ok) return res.status(500).json({ error: payload?.message || payload?.error || 'Failed to resolve report error' });
+          return res.status(200).json({ ok: true, row: Array.isArray(payload) ? payload[0] : payload });
+        }
+
+        return res.status(400).json({ error: 'Unsupported error source' });
+      }
     }
 
     return res.status(400).json({ error: `Unknown action: ${String(action).slice(0, 80)}` });
