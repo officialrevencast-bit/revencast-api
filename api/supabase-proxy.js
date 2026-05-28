@@ -996,6 +996,29 @@ async function handler(req, res) {
         return res.status(200).json({ reports: paged, total: rows.length, limit, offset });
       }
 
+      if (action === 'admin_list_contact_submissions') {
+        const q = String(req.body?.query || '').trim().toLowerCase();
+        const limitRaw = Number(req.body?.limit ?? 50);
+        const offsetRaw = Number(req.body?.offset ?? 0);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+        const submissions = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'contact_submissions', {
+          select: 'id,full_name,email,company,message,status,page_url,user_agent,created_at',
+          order: 'created_at.desc',
+          limit: '5000'
+        });
+        const rows = q
+          ? submissions.filter((item) =>
+            [item?.full_name, item?.email, item?.company, item?.message, item?.status].some((value) =>
+              String(value || '').toLowerCase().includes(q)
+            )
+          )
+          : submissions;
+        const paged = rows.slice(offset, offset + limit);
+        return res.status(200).json({ submissions: paged, total: rows.length, limit, offset });
+      }
+
       if (action === 'admin_get_report_detail') {
         const reportId = String(req.body?.report_id || '').trim();
         if (!reportId) return res.status(400).json({ error: 'report_id is required' });
