@@ -95,7 +95,7 @@ async function parseStripeJson(response) {
   }
 }
 
-function buildCheckoutForm({ plan, auth, origin, returnContext }) {
+function buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, customerName }) {
   const params = new URLSearchParams();
   const successUrl = new URL(`${origin}/pricing`);
   successUrl.searchParams.set('checkout', 'success');
@@ -109,6 +109,8 @@ function buildCheckoutForm({ plan, auth, origin, returnContext }) {
   params.set('success_url', successUrl.toString().replace('%7BCHECKOUT_SESSION_ID%7D', '{CHECKOUT_SESSION_ID}'));
   params.set('cancel_url', `${origin}/pricing?checkout=cancelled`);
   params.set('client_reference_id', auth.uid);
+  if (customerEmail) params.set('customer_email', customerEmail);
+  if (customerName) params.set('customer_creation', 'if_required');
   params.set('line_items[0][quantity]', '1');
   params.set('line_items[0][price_data][currency]', plan.currency);
   params.set('line_items[0][price_data][unit_amount]', String(plan.amount_cents));
@@ -187,13 +189,15 @@ module.exports = async function handler(req, res) {
 
     const origin = getOrigin(req);
     const returnContext = getCheckoutReturnContext(req.body || {});
+    const customerEmail = String(req.body?.customer_email || '').trim();
+    const customerName = String(req.body?.customer_name || '').trim();
     const stripeResp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: buildCheckoutForm({ plan, auth, origin, returnContext })
+      body: buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, customerName })
     });
 
     const session = await parseStripeJson(stripeResp);
