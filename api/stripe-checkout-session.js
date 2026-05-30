@@ -4,7 +4,7 @@ const PLAN_CATALOG = {
   spark: {
     plan_key: 'spark',
     plan_name: 'Spark',
-    product_id: 'prod_UWNdEx4NQQo4qE',
+    product_id: 'prod_UWNbZ1yLyXoPwt',
     credits: 1,
     amount_cents: 1999,
     currency: 'usd'
@@ -12,7 +12,7 @@ const PLAN_CATALOG = {
   ignite: {
     plan_key: 'ignite',
     plan_name: 'Ignite',
-    product_id: 'prod_UWNeuxQtilOGUu',
+    product_id: 'prod_UbvCrkskNdP4Pb',
     credits: 3,
     amount_cents: 2999,
     currency: 'usd'
@@ -20,7 +20,7 @@ const PLAN_CATALOG = {
   blaze: {
     plan_key: 'blaze',
     plan_name: 'Blaze',
-    product_id: 'prod_UWNhKLHlbi6Z3H',
+    product_id: 'prod_UbvEEmRkRiH9hg',
     credits: 10,
     amount_cents: 4999,
     currency: 'usd'
