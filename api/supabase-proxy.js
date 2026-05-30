@@ -256,7 +256,10 @@ function parseMetadata(value) {
 }
 
 function isAdminEmail(email) {
-  return String(email || '').trim().toLowerCase() === 'nomanromane@gmail.com';
+  return new Set([
+    'nomanromane@gmail.com',
+    'armaan2004ahmed@gmail.com'
+  ]).has(String(email || '').trim().toLowerCase());
 }
 
 function dateOnlyIso(value) {
