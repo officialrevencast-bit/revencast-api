@@ -234,6 +234,16 @@ async function fetchSupabaseRows(supabaseUrl, serviceKey, table, params) {
   return Array.isArray(payload) ? payload : [];
 }
 
+async function fetchSupabaseRowsWithFallback(supabaseUrl, serviceKey, table, params, fallbackParams = null) {
+  try {
+    return await fetchSupabaseRows(supabaseUrl, serviceKey, table, params);
+  } catch (err) {
+    if (!fallbackParams) throw err;
+    logError(`Supabase ${table} primary admin query failed, using fallback:`, err?.message || err);
+    return fetchSupabaseRows(supabaseUrl, serviceKey, table, fallbackParams);
+  }
+}
+
 function parseMetadata(value) {
   if (!value) return {};
   if (typeof value === 'object') return value;
@@ -301,6 +311,210 @@ function buildRecentActivity({ reports = [], credits = [], users = [] }) {
     .filter((e) => e.at)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)))
     .slice(0, 25);
+}
+
+function isPaidCheckout(row) {
+  return String(row?.status || '').toLowerCase() === 'paid' ||
+    String(row?.payment_status || '').toLowerCase() === 'paid' ||
+    Boolean(row?.paid_at || row?.credited_at);
+}
+
+function reportStatus(row) {
+  return String(row?.status || '').trim() || 'complete';
+}
+
+function reportCountry(row) {
+  return String(
+    row?.target_country ||
+    row?.input?.target_country ||
+    row?.merged_json?.meta?.target_country ||
+    row?.merged_json?.market_opportunity_analysis?.trend_search_parameters?.geo ||
+    ''
+  ).trim() || 'Unknown';
+}
+
+function reportUserId(row) {
+  return String(row?.user_id || row?.firebase_uid || row?.uid || row?.input?.firebase_uid || '').trim();
+}
+
+function checkoutPlanName(row) {
+  return String(row?.plan_name || row?.plan_key || row?.last_plan_name || row?.last_plan_key || '').trim() || 'Credit purchase';
+}
+
+function toTimestamp(value) {
+  const n = new Date(value || 0).getTime();
+  return Number.isFinite(n) ? n : 0;
+}
+
+function bucketByDaySum(rows, getDateValue, getAmountValue) {
+  const out = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const day = dateOnlyIso(getDateValue(row));
+    if (!day) return;
+    out.set(day, (out.get(day) || 0) + Number(getAmountValue(row) || 0));
+  });
+  return [...out.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, value]) => ({ date, value }));
+}
+
+function topCounts(rows, getKey, limit = 8) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = String(getKey(row) || '').trim() || 'Unknown';
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+  return [...map.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0) || String(a.label).localeCompare(String(b.label)))
+    .slice(0, limit);
+}
+
+function topSums(rows, getKey, getValue, limit = 8) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = String(getKey(row) || '').trim() || 'Unknown';
+    map.set(key, (map.get(key) || 0) + Number(getValue(row) || 0));
+  });
+  return [...map.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .filter((item) => Number(item.value || 0) !== 0)
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0) || String(a.label).localeCompare(String(b.label)))
+    .slice(0, limit);
+}
+
+function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], checkouts = [], contacts = [], webhookEvents = [] }) {
+  const now = Date.now();
+  const dayAgo = now - (24 * 60 * 60 * 1000);
+  const weekAgo = now - (7 * 24 * 60 * 60 * 1000);
+  const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
+  const paidCheckouts = (checkouts || []).filter(isPaidCheckout);
+  const accountPlanRows = paidCheckouts.length ? [] : (users || []).filter((u) => String(u?.last_plan_name || u?.last_plan_key || '').trim());
+  const planRows = paidCheckouts.length ? paidCheckouts : accountPlanRows;
+  const reportErrors = (reports || []).filter((r) => String(r?.error || '').trim() || reportStatus(r).toLowerCase() === 'failed');
+  const webhookErrors = (webhookEvents || []).filter((w) => String(w?.error || '').trim() || String(w?.status || '').toLowerCase() === 'failed');
+  const completedReports = (reports || []).filter((r) => reportStatus(r).toLowerCase() === 'complete');
+  const creditsUsedRows = (credits || []).filter((t) => Number(t?.credits_delta || 0) < 0);
+  const creditsAddedRows = (credits || []).filter((t) => Number(t?.credits_delta || 0) > 0);
+  const totalRevenueCents = paidCheckouts.reduce((sum, w) => sum + Number(w?.amount_cents || 0), 0);
+  const activeDaily = users.filter((u) => toTimestamp(u?.updated_at || u?.last_sign_in_at) >= dayAgo).length;
+  const activeWeekly = users.filter((u) => toTimestamp(u?.updated_at || u?.last_sign_in_at) >= weekAgo).length;
+  const activeMonthly = users.filter((u) => toTimestamp(u?.updated_at || u?.last_sign_in_at) >= monthAgo).length;
+  const usersWithCredits = users.filter((u) => Number(u?.credits_balance || 0) > 0).length;
+  const totalCreditsUsed = creditsUsedRows.reduce((sum, t) => sum + Math.abs(Number(t?.credits_delta || 0)), 0);
+  const totalCreditsAdded = creditsAddedRows.reduce((sum, t) => sum + Number(t?.credits_delta || 0), 0);
+  const reportCountByUser = new Map();
+  reports.forEach((r) => {
+    const uid = reportUserId(r);
+    if (!uid) return;
+    reportCountByUser.set(uid, (reportCountByUser.get(uid) || 0) + 1);
+  });
+  const userById = new Map(users.map((u) => [String(u?.firebase_uid || ''), u]));
+  const topUsersByReports = [...reportCountByUser.entries()]
+    .map(([uid, count]) => {
+      const user = userById.get(uid) || {};
+      return {
+        uid,
+        name: String(user?.display_name || user?.email || uid),
+        email: String(user?.email || ''),
+        reports: count,
+        credits_balance: Number(user?.credits_balance || 0)
+      };
+    })
+    .sort((a, b) => Number(b.reports || 0) - Number(a.reports || 0))
+    .slice(0, 8);
+  const recentPurchases = paidCheckouts
+    .slice()
+    .sort((a, b) => toTimestamp(b?.paid_at || b?.credited_at || b?.created_at) - toTimestamp(a?.paid_at || a?.credited_at || a?.created_at))
+    .slice(0, 8)
+    .map((row) => ({
+      firebase_uid: String(row?.firebase_uid || ''),
+      plan_key: String(row?.plan_key || ''),
+      plan_name: String(row?.plan_name || 'Credit purchase'),
+      credits: Number(row?.credits || 0),
+      amount_cents: Number(row?.amount_cents || 0),
+      currency: String(row?.currency || 'usd'),
+      paid_at: row?.paid_at || row?.credited_at || row?.created_at || null,
+      status: row?.status || row?.payment_status || ''
+    }));
+
+  return {
+    metrics: {
+      total_users: users.length,
+      active_daily: activeDaily,
+      active_weekly: activeWeekly,
+      active_monthly: activeMonthly,
+      users_with_credits: usersWithCredits,
+      users_without_credits: Math.max(0, users.length - usersWithCredits),
+      total_reports: reports.length,
+      completed_reports: completedReports.length,
+      failed_reports: reportErrors.length,
+      completion_rate: reports.length ? Math.round((completedReports.length / reports.length) * 1000) / 10 : null,
+      total_revenue_cents: totalRevenueCents,
+      paid_sessions: paidCheckouts.length,
+      avg_order_value_cents: paidCheckouts.length ? Math.round(totalRevenueCents / paidCheckouts.length) : null,
+      credits_used: totalCreditsUsed,
+      credits_added: totalCreditsAdded,
+      contact_submissions: contacts.length,
+      open_contacts: contacts.filter((c) => !['closed', 'resolved'].includes(String(c?.status || '').toLowerCase())).length,
+      unresolved_errors: reportErrors.length + webhookErrors.length,
+      report_errors: reportErrors.length,
+      webhook_errors: webhookErrors.length,
+      reports_per_user: users.length ? Math.round((reports.length / users.length) * 100) / 100 : null,
+      paid_conversion_rate: users.length ? Math.round((paidCheckouts.length / users.length) * 1000) / 10 : null
+    },
+    trends: {
+      reports_by_day: bucketByDay(reports, (r) => r?.created_at),
+      completed_reports_by_day: bucketByDay(completedReports, (r) => r?.created_at),
+      failed_reports_by_day: bucketByDay(reportErrors, (r) => r?.created_at),
+      users_by_day: bucketByDay(users, (u) => u?.created_at),
+      revenue_by_day: bucketByDaySum(paidCheckouts, (w) => w?.paid_at || w?.credited_at || w?.created_at, (w) => Number(w?.amount_cents || 0) / 100),
+      credits_used_by_day: bucketByDaySum(creditsUsedRows, (t) => t?.created_at, (t) => Math.abs(Number(t?.credits_delta || 0))),
+      credits_added_by_day: bucketByDaySum(creditsAddedRows, (t) => t?.created_at, (t) => Number(t?.credits_delta || 0)),
+      contacts_by_day: bucketByDay(contacts, (c) => c?.created_at),
+      errors_by_day: bucketByDay([...reportErrors, ...webhookErrors], (e) => e?.created_at)
+    },
+    breakdowns: {
+      report_status: topCounts(reports, reportStatus, 10),
+      target_countries: topCounts(reports, reportCountry, 10),
+      plan_mix: topCounts(planRows, checkoutPlanName, 10),
+      revenue_by_plan: topSums(paidCheckouts, checkoutPlanName, (w) => Number(w?.amount_cents || 0) / 100, 10),
+      credit_transaction_types: topCounts(credits, (t) => t?.type || 'transaction', 10),
+      contact_status: topCounts(contacts, (c) => c?.status || 'new', 10),
+      error_sources: topCounts([
+        ...reportErrors.map((e) => ({ source: 'reports', ...e })),
+        ...webhookErrors.map((e) => ({ source: 'webhooks', ...e }))
+      ], (e) => e?.source, 10)
+    },
+    rankings: {
+      top_users_by_reports: topUsersByReports,
+      top_users_by_credit_balance: users
+        .slice()
+        .sort((a, b) => Number(b?.credits_balance || 0) - Number(a?.credits_balance || 0))
+        .slice(0, 8)
+        .map((u) => ({
+          uid: String(u?.firebase_uid || ''),
+          name: String(u?.display_name || u?.email || u?.firebase_uid || ''),
+          email: String(u?.email || ''),
+          credits_balance: Number(u?.credits_balance || 0),
+          reports: reportCountByUser.get(String(u?.firebase_uid || '')) || 0
+        })),
+      recent_purchases: recentPurchases
+    },
+    health: {
+      failed_reports: reportErrors.length,
+      webhook_errors: webhookErrors.length,
+      open_contacts: contacts.filter((c) => !['closed', 'resolved'].includes(String(c?.status || '').toLowerCase())).length,
+      users_without_credits: Math.max(0, users.length - usersWithCredits),
+      last_report_at: reports[0]?.created_at || null,
+      last_purchase_at: recentPurchases[0]?.paid_at || null
+    },
+    recent_activity: buildRecentActivity({
+      reports: reports.slice(0, 30),
+      credits: credits.slice(0, 30),
+      users: users.slice(0, 30)
+    })
+  };
 }
 
 function normalizeCheckoutPurchase(row) {
@@ -551,7 +765,8 @@ async function handler(req, res) {
           p_reason: 'simulation_run',
           p_metadata: {
             idea_name: String(req.body?.idea_name || '').trim().slice(0, 120),
-            target_country: String(req.body?.target_country || '').trim().slice(0, 120)
+            target_country: String(req.body?.target_country || '').trim().slice(0, 120),
+            report_id: String(req.body?.report_id || '').trim().slice(0, 120)
           }
         });
       } catch (err) {
@@ -791,63 +1006,64 @@ async function handler(req, res) {
       }
 
       if (action === 'admin_overview') {
-        const [users, reports, credits, webhooks] = await Promise.all([
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
-            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance',
+        const [users, reports, credits, checkouts, contacts, webhookEvents] = await Promise.all([
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,total_credits_purchased,total_credits_used,last_plan_key,last_plan_name,last_purchase_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
             order: 'created_at.desc',
             limit: '5000'
           }),
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
-            select: 'id,user_id,idea_name,target_country,status,error,created_at',
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,status,error,created_at,input,merged_json',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
             order: 'created_at.desc',
             limit: '5000'
           }),
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'credit_transactions', {
-            select: 'id,firebase_uid,type,credits_delta,created_at,metadata',
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'credit_transactions', {
+            select: 'id,firebase_uid,type,credits_delta,balance_after,source,stripe_session_id,report_id,metadata,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
             order: 'created_at.desc',
             limit: '5000'
           }).catch(() => []),
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
-            select: 'id,amount_cents,credits,currency,paid_at,created_at,status,payment_status,firebase_uid',
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
+            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid',
+            order: 'created_at.desc',
+            limit: '2000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '2000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'contact_submissions', {
+            select: 'id,full_name,email,company,message,status,page_url,user_agent,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_webhook_events', {
+            select: 'id,error,event_type,created_at,status',
+            order: 'created_at.desc',
+            limit: '2000'
+          }, {
+            select: '*',
             order: 'created_at.desc',
             limit: '2000'
           }).catch(() => [])
         ]);
 
-        const now = Date.now();
-        const dayAgo = now - (24 * 60 * 60 * 1000);
-        const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
-        const activeDaily = users.filter((u) => new Date(u?.updated_at || u?.last_sign_in_at || 0).getTime() >= dayAgo).length;
-        const activeMonthly = users.filter((u) => new Date(u?.updated_at || u?.last_sign_in_at || 0).getTime() >= monthAgo).length;
-        const totalRevenueCents = webhooks
-          .filter((w) => String(w?.status || '').toLowerCase() === 'paid' || String(w?.payment_status || '').toLowerCase() === 'paid' || Boolean(w?.paid_at))
-          .reduce((sum, w) => sum + Number(w?.amount_cents || 0), 0);
-        const creditsUsed = credits
-          .filter((t) => Number(t?.credits_delta || 0) < 0)
-          .reduce((sum, t) => sum + Math.abs(Number(t?.credits_delta || 0)), 0);
-        const trendReports = bucketByDay(reports, (r) => r?.created_at);
-        const trendUsers = bucketByDay(users, (u) => u?.created_at);
-        const recentActivity = buildRecentActivity({
-          reports: reports.slice(0, 30),
-          credits: credits.slice(0, 30),
-          users: users.slice(0, 30)
-        });
-
-        return res.status(200).json({
-          metrics: {
-            total_users: users.length,
-            active_daily: activeDaily,
-            active_monthly: activeMonthly,
-            total_reports: reports.length,
-            total_revenue_cents: totalRevenueCents,
-            credits_used: creditsUsed
-          },
-          trends: {
-            reports_by_day: trendReports,
-            users_by_day: trendUsers
-          },
-          recent_activity: recentActivity
-        });
+        return res.status(200).json(buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents }));
       }
 
       if (action === 'admin_list_users') {
@@ -1033,38 +1249,80 @@ async function handler(req, res) {
       }
 
       if (action === 'admin_analytics') {
-        const [reports, users] = await Promise.all([
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
-            select: 'id,user_id,created_at,status',
+        const [reports, users, credits, checkouts, contacts, webhookEvents] = await Promise.all([
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,created_at,status,error,input,merged_json',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
             order: 'created_at.desc',
             limit: '5000'
           }),
-          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
-            select: 'firebase_uid,created_at',
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,total_credits_purchased,total_credits_used,last_plan_key,last_plan_name,last_purchase_at',
             order: 'created_at.desc',
             limit: '5000'
-          })
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'credit_transactions', {
+            select: 'id,firebase_uid,type,credits_delta,balance_after,source,stripe_session_id,report_id,metadata,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
+            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid',
+            order: 'created_at.desc',
+            limit: '2000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '2000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'contact_submissions', {
+            select: 'id,full_name,email,company,message,status,page_url,user_agent,created_at',
+            order: 'created_at.desc',
+            limit: '5000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_webhook_events', {
+            select: 'id,error,event_type,created_at,status',
+            order: 'created_at.desc',
+            limit: '2000'
+          }, {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '2000'
+          }).catch(() => [])
         ]);
-        const reportsByDay = bucketByDay(reports, (r) => r?.created_at);
-        const usersByDay = bucketByDay(users, (u) => u?.created_at);
-        const weeklyVisits = reportsByDay.slice(-7).reduce((sum, d) => sum + Number(d.value || 0), 0);
-        const monthlyVisits = reportsByDay.slice(-30).reduce((sum, d) => sum + Number(d.value || 0), 0);
-        const dailyVisits = reportsByDay.length ? Number(reportsByDay[reportsByDay.length - 1].value || 0) : 0;
+        const payload = buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents });
         return res.status(200).json({
+          ...payload,
           summary: {
-            daily_visits: dailyVisits,
-            weekly_visits: weeklyVisits,
-            monthly_visits: monthlyVisits,
-            page_views: reports.length,
-            avg_session_duration_sec: null
+            daily_reports: payload.trends.reports_by_day.length ? Number(payload.trends.reports_by_day[payload.trends.reports_by_day.length - 1].value || 0) : 0,
+            weekly_reports: payload.trends.reports_by_day.slice(-7).reduce((sum, d) => sum + Number(d.value || 0), 0),
+            monthly_reports: payload.trends.reports_by_day.slice(-30).reduce((sum, d) => sum + Number(d.value || 0), 0),
+            total_reports: payload.metrics.total_reports,
+            total_users: payload.metrics.total_users,
+            total_revenue_cents: payload.metrics.total_revenue_cents
           },
           charts: {
-            usage_by_day: reportsByDay,
-            users_by_day: usersByDay
-          },
-          breakdown: {
-            devices: [],
-            browsers: []
+            usage_by_day: payload.trends.reports_by_day,
+            users_by_day: payload.trends.users_by_day,
+            revenue_by_day: payload.trends.revenue_by_day,
+            credits_used_by_day: payload.trends.credits_used_by_day,
+            contacts_by_day: payload.trends.contacts_by_day,
+            errors_by_day: payload.trends.errors_by_day
           }
         });
       }
@@ -1083,11 +1341,11 @@ async function handler(req, res) {
           }).catch(() => [])
         ]);
         const reportErrors = reports
-          .filter((r) => String(r?.error || '').trim())
+          .filter((r) => String(r?.error || '').trim() || reportStatus(r).toLowerCase() === 'failed')
           .map((r) => ({
             source: 'report',
             id: String(r?.id || ''),
-            message: String(r?.error || ''),
+            message: String(r?.error || '') || 'Report marked as failed',
             severity: String(r?.status || '').toLowerCase() === 'failed' ? 'critical' : 'warning',
             user_id: String(r?.user_id || ''),
             route: '/simulation',
@@ -1095,11 +1353,11 @@ async function handler(req, res) {
             resolved: false
           }));
         const webhookErrors = webhooks
-          .filter((w) => String(w?.error || '').trim())
+          .filter((w) => String(w?.error || '').trim() || String(w?.status || '').toLowerCase() === 'failed')
           .map((w) => ({
             source: 'webhook',
             id: String(w?.id || ''),
-            message: String(w?.error || ''),
+            message: String(w?.error || '') || 'Webhook marked as failed',
             severity: 'warning',
             user_id: '',
             route: '/api/stripe-webhook',
