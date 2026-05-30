@@ -49,6 +49,7 @@ function getPlanFromRequest(body = {}) {
     plan_name: `Custom (${credits} Reports)`,
     product_id: '',
     product_name: 'Revencast Custom Report Credits',
+    product_description: `Generate ${credits} custom market validation report${credits === 1 ? '' : 's'}. Each report includes comprehensive market analysis and insights tailored to your business needs.`,
     credits,
     amount_cents: calculateCustomAmountCents(credits),
     currency: 'usd'
@@ -115,6 +116,9 @@ function buildCheckoutForm({ plan, auth, origin, returnContext }) {
     params.set('line_items[0][price_data][product]', plan.product_id);
   } else {
     params.set('line_items[0][price_data][product_data][name]', plan.product_name || plan.plan_name);
+    if (plan.product_description) {
+      params.set('line_items[0][price_data][product_data][description]', plan.product_description);
+    }
   }
   params.set('metadata[firebase_uid]', auth.uid);
   params.set('metadata[plan_key]', plan.plan_key);
