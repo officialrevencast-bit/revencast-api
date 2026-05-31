@@ -344,6 +344,113 @@ function checkoutPlanName(row) {
   return String(row?.plan_name || row?.plan_key || row?.last_plan_name || row?.last_plan_key || '').trim() || 'Credit purchase';
 }
 
+function getSerpApiKeys() {
+  return [
+    ['SERPAPI_KEY', process.env.SERPAPI_KEY],
+    ['SERPAPI_KEY_2', process.env.SERPAPI_KEY_2],
+    ['SERPAPI_KEY_3', process.env.SERPAPI_KEY_3],
+    ['SERPAPI_KEY_4', process.env.SERPAPI_KEY_4]
+  ]
+    .map(([name, value]) => [name, String(value || '').trim()])
+    .filter(([, value]) => Boolean(value));
+}
+
+function toNullableNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function sumNullable(values) {
+  const nums = values.filter((value) => Number.isFinite(Number(value)));
+  if (!nums.length) return null;
+  return nums.reduce((sum, value) => sum + Number(value), 0);
+}
+
+function maskSecret(value) {
+  const key = String(value || '');
+  if (key.length <= 8) return key ? 'configured' : '';
+  return `${key.slice(0, 4)}...${key.slice(-4)}`;
+}
+
+async function fetchSerpApiAccount(envName, apiKey) {
+  const url = new URL('https://serpapi.com/account.json');
+  url.searchParams.set('api_key', apiKey);
+  const response = await fetch(url.toString(), { method: 'GET' });
+  const payload = await parseJsonSafe(response);
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error || payload?.message || `serpapi_account_${response.status}`);
+  }
+  return {
+    env_name: envName,
+    key_label: `${envName} (${maskSecret(apiKey)})`,
+    ok: true,
+    plan_name: String(payload?.plan_name || payload?.plan_id || 'SerpAPI account'),
+    total_searches_left: toNullableNumber(payload?.total_searches_left),
+    plan_searches_left: toNullableNumber(payload?.plan_searches_left),
+    extra_credits: toNullableNumber(payload?.extra_credits),
+    searches_per_month: toNullableNumber(payload?.searches_per_month),
+    this_month_usage: toNullableNumber(payload?.this_month_usage),
+    last_hour_searches: toNullableNumber(payload?.last_hour_searches),
+    account_rate_limit_per_hour: toNullableNumber(payload?.account_rate_limit_per_hour)
+  };
+}
+
+async function fetchSerpApiCreditSummary() {
+  const keys = getSerpApiKeys();
+  if (!keys.length) {
+    return {
+      configured_keys: 0,
+      healthy_keys: 0,
+      total_searches_left: null,
+      plan_searches_left: null,
+      extra_credits: null,
+      searches_per_month: null,
+      this_month_usage: null,
+      last_hour_searches: null,
+      account_rate_limit_per_hour: null,
+      accounts: [],
+      errors: [{ env_name: 'SERPAPI_KEY', message: 'No SerpAPI keys configured' }],
+      last_checked_at: new Date().toISOString()
+    };
+  }
+
+  const settled = await Promise.all(keys.map(async ([envName, apiKey]) => {
+    try {
+      return await fetchSerpApiAccount(envName, apiKey);
+    } catch (err) {
+      return {
+        env_name: envName,
+        key_label: `${envName} (${maskSecret(apiKey)})`,
+        ok: false,
+        error: err?.message || 'Unable to fetch SerpAPI account'
+      };
+    }
+  }));
+  const accounts = settled.filter((item) => item?.ok);
+  const errors = settled
+    .filter((item) => !item?.ok)
+    .map((item) => ({
+      env_name: item?.env_name || 'SERPAPI_KEY',
+      key_label: item?.key_label || '',
+      message: item?.error || 'Unable to fetch SerpAPI account'
+    }));
+
+  return {
+    configured_keys: keys.length,
+    healthy_keys: accounts.length,
+    total_searches_left: sumNullable(accounts.map((item) => item.total_searches_left)),
+    plan_searches_left: sumNullable(accounts.map((item) => item.plan_searches_left)),
+    extra_credits: sumNullable(accounts.map((item) => item.extra_credits)),
+    searches_per_month: sumNullable(accounts.map((item) => item.searches_per_month)),
+    this_month_usage: sumNullable(accounts.map((item) => item.this_month_usage)),
+    last_hour_searches: sumNullable(accounts.map((item) => item.last_hour_searches)),
+    account_rate_limit_per_hour: sumNullable(accounts.map((item) => item.account_rate_limit_per_hour)),
+    accounts,
+    errors,
+    last_checked_at: new Date().toISOString()
+  };
+}
+
 function toTimestamp(value) {
   const n = new Date(value || 0).getTime();
   return Number.isFinite(n) ? n : 0;
@@ -386,7 +493,7 @@ function topSums(rows, getKey, getValue, limit = 8) {
     .slice(0, limit);
 }
 
-function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], checkouts = [], contacts = [], webhookEvents = [] }) {
+function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], checkouts = [], contacts = [], webhookEvents = [], serpapi = null }) {
   const now = Date.now();
   const dayAgo = now - (24 * 60 * 60 * 1000);
   const weekAgo = now - (7 * 24 * 60 * 60 * 1000);
@@ -464,7 +571,10 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
       report_errors: reportErrors.length,
       webhook_errors: webhookErrors.length,
       reports_per_user: users.length ? Math.round((reports.length / users.length) * 100) / 100 : null,
-      paid_conversion_rate: users.length ? Math.round((paidCheckouts.length / users.length) * 1000) / 10 : null
+      paid_conversion_rate: users.length ? Math.round((paidCheckouts.length / users.length) * 1000) / 10 : null,
+      serpapi_total_searches_left: serpapi?.total_searches_left ?? null,
+      serpapi_configured_keys: serpapi?.configured_keys ?? 0,
+      serpapi_healthy_keys: serpapi?.healthy_keys ?? 0
     },
     trends: {
       reports_by_day: bucketByDay(reports, (r) => r?.created_at),
@@ -516,7 +626,10 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
       reports: reports.slice(0, 30),
       credits: credits.slice(0, 30),
       users: users.slice(0, 30)
-    })
+    }),
+    integrations: {
+      serpapi
+    }
   };
 }
 
@@ -1009,7 +1122,7 @@ async function handler(req, res) {
       }
 
       if (action === 'admin_overview') {
-        const [users, reports, credits, checkouts, contacts, webhookEvents] = await Promise.all([
+        const [users, reports, credits, checkouts, contacts, webhookEvents, serpapi] = await Promise.all([
           fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
             select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,total_credits_purchased,total_credits_used,last_plan_key,last_plan_name,last_purchase_at',
             order: 'created_at.desc',
@@ -1063,10 +1176,22 @@ async function handler(req, res) {
             select: '*',
             order: 'created_at.desc',
             limit: '2000'
-          }).catch(() => [])
+          }).catch(() => []),
+          fetchSerpApiCreditSummary().catch((err) => ({
+            configured_keys: getSerpApiKeys().length,
+            healthy_keys: 0,
+            total_searches_left: null,
+            plan_searches_left: null,
+            extra_credits: null,
+            searches_per_month: null,
+            this_month_usage: null,
+            accounts: [],
+            errors: [{ env_name: 'SERPAPI_KEY', message: err?.message || 'Unable to fetch SerpAPI credits' }],
+            last_checked_at: new Date().toISOString()
+          }))
         ]);
 
-        return res.status(200).json(buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents }));
+        return res.status(200).json(buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents, serpapi }));
       }
 
       if (action === 'admin_list_users') {
