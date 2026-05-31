@@ -206,7 +206,7 @@ async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKeys = [process.env.SERPAPI_KEY, process.env.SERPAPI_KEY_2, process.env.SERPAPI_KEY_3].filter(Boolean);
+  const apiKeys = [process.env.SERPAPI_KEY, process.env.SERPAPI_KEY_2, process.env.SERPAPI_KEY_3, process.env.SERPAPI_KEY_4].filter(Boolean);
   if (apiKeys.length === 0) {
     return res.status(500).json({ error: 'No SerpAPI keys configured' });
   }
