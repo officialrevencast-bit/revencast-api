@@ -82,39 +82,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Send verification email flow
-    if (requestType === 'SEND_VERIFICATION_EMAIL') {
-      if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
-      }
-      
-      const verifyResponse = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestType: 'VERIFY_EMAIL',
-            email: email
-          })
-        }
-      );
-      
-      const verifyData = await verifyResponse.json();
-      if (!verifyResponse.ok) {
-        return res.status(verifyResponse.status).json({
-          error: 'Firebase Verification Email error',
-          details: verifyData?.error?.message || 'Unable to send verification email'
-        });
-      }
-      
-      return res.status(200).json({
-        success: true,
-        message: 'Verification email sent',
-        email: email
-      });
-    }
-
     // Login flow
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
