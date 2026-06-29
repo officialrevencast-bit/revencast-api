@@ -3,39 +3,17 @@
 const PLAN_CATALOG = {
   spark: {
     plan_key: 'spark',
-    plan_name: 'Spark',
-    product_id: 'prod_UWNbZ1yLyXoPwt',
+    plan_name: 'Single Report',
+    product_id: 'prod_UnCo4rcHCD4Kay',
     credits: 1,
-    amount_cents: 1999,
-    currency: 'usd'
-  },
-  ignite: {
-    plan_key: 'ignite',
-    plan_name: 'Ignite',
-    product_id: 'prod_UbvCrkskNdP4Pb',
-    credits: 3,
-    amount_cents: 2999,
-    currency: 'usd'
-  },
-  blaze: {
-    plan_key: 'blaze',
-    plan_name: 'Blaze',
-    product_id: 'prod_UbvEEmRkRiH9hg',
-    credits: 10,
-    amount_cents: 4999,
+    amount_cents: 199,
     currency: 'usd'
   }
 };
 
 function calculateCustomAmountCents(reportCount) {
-  const count = Math.max(1, Math.min(25, Number.parseInt(reportCount, 10) || 1));
-  if (count === 1) return 1999;
-  if (count === 2) return 2499;
-  if (count === 3) return 2999;
-  if (count > 3 && count < 10) {
-    return Math.round((29.99 + ((49.99 - 29.99) / 7) * (count - 3)) * 100);
-  }
-  return Math.round(4.999 * count * 100);
+  const count = Math.max(2, Math.min(25, Number.parseInt(reportCount, 10) || 2));
+  return Math.round(count * 1.99 * 100);
 }
 
 function getPlanFromRequest(body = {}) {
@@ -43,13 +21,13 @@ function getPlanFromRequest(body = {}) {
   if (PLAN_CATALOG[planKey]) return PLAN_CATALOG[planKey];
   if (planKey !== 'custom') return null;
 
-  const credits = Math.max(1, Math.min(25, Number.parseInt(body?.reports, 10) || 1));
+  const credits = Math.max(2, Math.min(25, Number.parseInt(body?.reports, 10) || 1));
   return {
     plan_key: 'custom',
     plan_name: `Custom (${credits} Reports)`,
     product_id: '',
     product_name: 'Revencast Custom Report Credits',
-    product_description: `Generate ${credits} custom market validation report${credits === 1 ? '' : 's'}. Each report includes comprehensive market analysis and insights tailored to your business needs.`,
+    product_description: `Generate ${credits} custom product idea validation report${credits === 1 ? '' : 's'}. Each report includes 12 structured analysis sections with detailed business insights.`,
     credits,
     amount_cents: calculateCustomAmountCents(credits),
     currency: 'usd'
