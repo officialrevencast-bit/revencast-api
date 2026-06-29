@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 
-const STRIPE_TEST_MODE = true; // Must match the value in stripe-checkout-session.js
+const STRIPE_TEST_MODE = false; // Must match the value in stripe-checkout-session.js
 const TEST_STRIPE_WEBHOOK_SECRET = 'whsec_iZRmc2yEs11rh1hiN7v4CQ4a3JkzxJWE';
 const EVENT_TOLERANCE_SECONDS = 300;
 
