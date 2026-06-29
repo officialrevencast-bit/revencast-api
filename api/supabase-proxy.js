@@ -830,6 +830,7 @@ async function handler(req, res) {
         responseAccount,
         credit_transactions
       );
+
       return res.status(200).json({
         account: responseAccount,
         last_purchase,
