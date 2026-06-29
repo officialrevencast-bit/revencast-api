@@ -830,22 +830,10 @@ async function handler(req, res) {
         responseAccount,
         credit_transactions
       );
-      
-      // Compute credits expiring this month
-      let credits_expiring_this_month = 0;
-      if (responseAccount?.credits_expire_at) {
-        const now = new Date();
-        const expireDate = new Date(responseAccount.credits_expire_at);
-        if (expireDate > now && expireDate.getMonth() === now.getMonth() && expireDate.getFullYear() === now.getFullYear()) {
-          credits_expiring_this_month = Number(responseAccount.credits_balance || 0);
-        }
-      }
-      
       return res.status(200).json({
         account: responseAccount,
         last_purchase,
-        credit_transactions,
-        credits_expiring_this_month
+        credit_transactions
       });
     }
 
@@ -1272,21 +1260,15 @@ async function handler(req, res) {
         if (!user) return res.status(404).json({ error: 'User not found' });
         const nextBalance = Math.max(0, Number(user?.credits_balance || 0) + delta);
 
-        // When adding positive credits via admin, set/renew 60-day expiry
-        const updateBody = {
-          credits_balance: nextBalance,
-          updated_at: new Date().toISOString()
-        };
-        if (delta > 0) {
-          updateBody.credits_expire_at = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
-        }
-
         const updateResp = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(uid)}&select=*`, {
           method: 'PATCH',
           headers: {
             ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=representation')
           },
-          body: JSON.stringify(updateBody)
+          body: JSON.stringify({
+            credits_balance: nextBalance,
+            updated_at: new Date().toISOString()
+          })
         });
         const updatePayload = await parseJsonSafe(updateResp);
         if (!updateResp.ok) {
