@@ -1,10 +1,13 @@
 'use strict';
 
+const STRIPE_TEST_MODE = true; // Set to true for test mode, false for live mode
+const TEST_STRIPE_SECRET_KEY = 'sk_test_51TFcrjI2kzkJOatj17mUcA0JI0M15JtUkiqsdqLekyVDXbL6VyJjSTHhizlw7fejOWw4v9fyNJvpUKm5pPloDwyP00UVscsGxt';
+
 const PLAN_CATALOG = {
   spark: {
     plan_key: 'spark',
     plan_name: 'Single Report',
-    product_id: 'prod_UnCo4rcHCD4Kay',
+    product_id: STRIPE_TEST_MODE ? 'prod_UnFpLx9LewhOQ1' : 'prod_UnCo4rcHCD4Kay',
     credits: 1,
     amount_cents: 199,
     currency: 'usd'
@@ -157,7 +160,7 @@ module.exports = async function handler(req, res) {
   if (!auth || !auth.ok) return;
 
   try {
-    const STRIPE_SECRET_KEY = getEnv('STRIPE_SECRET_KEY');
+    const STRIPE_SECRET_KEY = STRIPE_TEST_MODE ? TEST_STRIPE_SECRET_KEY : getEnv('STRIPE_SECRET_KEY');
     if (!STRIPE_SECRET_KEY) {
       return res.status(500).json({ error: 'Stripe is not configured' });
     }
