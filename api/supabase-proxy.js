@@ -830,10 +830,22 @@ async function handler(req, res) {
         responseAccount,
         credit_transactions
       );
+      
+      // Compute credits expiring this month
+      let credits_expiring_this_month = 0;
+      if (responseAccount?.credits_expire_at) {
+        const now = new Date();
+        const expireDate = new Date(responseAccount.credits_expire_at);
+        if (expireDate > now && expireDate.getMonth() === now.getMonth() && expireDate.getFullYear() === now.getFullYear()) {
+          credits_expiring_this_month = Number(responseAccount.credits_balance || 0);
+        }
+      }
+      
       return res.status(200).json({
         account: responseAccount,
         last_purchase,
-        credit_transactions
+        credit_transactions,
+        credits_expiring_this_month
       });
     }
 
