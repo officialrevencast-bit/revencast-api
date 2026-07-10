@@ -1354,6 +1354,84 @@ async function handler(req, res) {
         });
       }
 
+      if (action === 'admin_list_preview_users') {
+        const q = String(req.body?.query || '').trim().toLowerCase();
+        const from = String(req.body?.from || '').trim();
+        const to = String(req.body?.to || '').trim();
+        const limitRaw = Number(req.body?.limit ?? 100);
+        const offsetRaw = Number(req.body?.offset ?? 0);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 100;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+        const [reports, users] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,status,error,created_at,input,merged_json',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name,credits_balance,total_credits_purchased,total_credits_used,free_preview_used_at,created_at',
+            limit: '5000'
+          })
+        ]);
+
+        const userById = new Map(users.map((u) => [String(u?.firebase_uid || ''), u]));
+
+        // Get preview reports grouped by user, only for users with 0 credits and no purchases
+        const previewReportsByUser = new Map();
+        reports
+          .filter((r) => r?.is_preview === true || String(r?.status || '').toLowerCase() === 'preview')
+          .forEach((r) => {
+            const uid = String(r?.user_id || '').trim();
+            if (!uid) return;
+            if (!previewReportsByUser.has(uid)) previewReportsByUser.set(uid, []);
+            previewReportsByUser.get(uid).push(r);
+          });
+
+        let rows = [];
+        for (const [uid, userReports] of previewReportsByUser) {
+          const user = userById.get(uid);
+          // Only include users who have 0 credits and never purchased
+          const creditsBalance = Number(user?.credits_balance || 0);
+          const totalPurchased = Number(user?.total_credits_purchased || 0);
+          const totalUsed = Number(user?.total_credits_used || 0);
+          if (creditsBalance > 0 || totalPurchased > 0 || totalUsed > 0) continue;
+          if (!user?.email) continue;
+
+          const latestPreview = userReports.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+          const input = latestPreview?.input || {};
+          
+          rows.push({
+            firebase_uid: uid,
+            email: user.email,
+            display_name: user.display_name || '',
+            created_at: user.created_at || '',
+            preview_count: userReports.length,
+            latest_preview_at: latestPreview?.created_at || '',
+            latest_idea_name: latestPreview?.idea_name || input?.idea_name || '',
+            latest_product_idea: input?.product_idea || '',
+            latest_target_country: latestPreview?.target_country || input?.target_country || '',
+            latest_preview_id: latestPreview?.id || ''
+          });
+        }
+
+        if (q) {
+          rows = rows.filter((r) =>
+            [r?.email, r?.display_name, r?.latest_idea_name, r?.latest_target_country].some((v) =>
+              String(v || '').toLowerCase().includes(q)
+            )
+          );
+        }
+        if (from) rows = rows.filter((r) => new Date(r?.latest_preview_at || 0).getTime() >= new Date(from).getTime());
+        if (to) rows = rows.filter((r) => new Date(r?.latest_preview_at || 0).getTime() <= new Date(to).getTime());
+
+        // Sort by latest preview date descending
+        rows.sort((a, b) => String(b.latest_preview_at || '').localeCompare(String(a.latest_preview_at || '')));
+
+        const paged = rows.slice(offset, offset + limit);
+        return res.status(200).json({ users: paged, total: rows.length, limit, offset });
+      }
+
       if (action === 'admin_list_previews') {
         const q = String(req.body?.query || '').trim().toLowerCase();
         const from = String(req.body?.from || '').trim();
