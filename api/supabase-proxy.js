@@ -850,6 +850,60 @@ async function handler(req, res) {
       return res.status(200).json({ purchase: normalizeCheckoutPurchase(row) });
     }
 
+    if (action === 'create_preview_report') {
+      const idea_name = String(req.body?.idea_name || '').trim();
+      const product_idea = String(req.body?.product_idea || '').trim();
+      const target_country = String(req.body?.target_country || '').trim();
+
+      if (!idea_name) return res.status(400).json({ error: 'idea_name is required' });
+      if (!product_idea) return res.status(400).json({ error: 'product_idea is required' });
+      if (!target_country) return res.status(400).json({ error: 'target_country is required' });
+
+      const row = {
+        user_id: auth.uid,
+        idea_name,
+        target_country,
+        status: 'preview',
+        is_preview: true,
+        error: null,
+        input: {
+          idea_name,
+          product_idea,
+          target_country
+        },
+        call1_json: req.body?.call1_json ?? null,
+        call1_raw: req.body?.call1_raw ?? null,
+        call1_text: req.body?.call1_text ?? null,
+        merged_json: req.body?.merged_json ?? null,
+        pdf_report_json: null,
+        references_json: []
+      };
+
+      const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports`, {
+        method: 'POST',
+        headers: {
+          ...supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY),
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify(row)
+      });
+      const payload = await parseJsonSafe(response);
+      if (!response.ok) {
+        logError('Supabase create_preview_report failed:', response.status, payload);
+        return res.status(500).json({
+          error: 'Failed to create preview report',
+          details: payload?.message || payload?.error || `supabase_${response.status}`
+        });
+      }
+
+      const created = Array.isArray(payload) ? payload[0] : payload;
+      const report_id = created?.id || '';
+      if (!report_id) {
+        return res.status(500).json({ error: 'Preview report created but id missing' });
+      }
+      return res.status(200).json({ report_id, report: created });
+    }
+
     if (action === 'claim_free_preview') {
       try {
         const preview = await claimFreePreview(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, auth, req.body || {});
@@ -1298,6 +1352,47 @@ async function handler(req, res) {
           ok: true,
           user: Array.isArray(updatePayload) ? updatePayload[0] : updatePayload
         });
+      }
+
+      if (action === 'admin_list_previews') {
+        const q = String(req.body?.query || '').trim().toLowerCase();
+        const from = String(req.body?.from || '').trim();
+        const to = String(req.body?.to || '').trim();
+        const limitRaw = Number(req.body?.limit ?? 50);
+        const offsetRaw = Number(req.body?.offset ?? 0);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+        const [reports, users] = await Promise.all([
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
+            select: 'id,user_id,idea_name,target_country,status,error,created_at,input,merged_json',
+            order: 'created_at.desc',
+            limit: '5000'
+          }),
+          fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+            select: 'firebase_uid,email,display_name',
+            limit: '5000'
+          })
+        ]);
+        const userById = new Map(users.map((u) => [String(u?.firebase_uid || ''), u]));
+        let rows = reports
+          .filter((r) => r?.is_preview === true || String(r?.status || '').toLowerCase() === 'preview')
+          .map((r) => ({
+            ...r,
+            user_email: userById.get(String(r?.user_id || ''))?.email || '',
+            user_name: userById.get(String(r?.user_id || ''))?.display_name || ''
+          }));
+        if (q) {
+          rows = rows.filter((r) =>
+            [r?.idea_name, r?.target_country, r?.user_email, r?.user_name, r?.status].some((v) =>
+              String(v || '').toLowerCase().includes(q)
+            )
+          );
+        }
+        if (from) rows = rows.filter((r) => new Date(r?.created_at || 0).getTime() >= new Date(from).getTime());
+        if (to) rows = rows.filter((r) => new Date(r?.created_at || 0).getTime() <= new Date(to).getTime());
+        const paged = rows.slice(offset, offset + limit);
+        return res.status(200).json({ reports: paged, total: rows.length, limit, offset });
       }
 
       if (action === 'admin_list_reports') {
