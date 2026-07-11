@@ -465,6 +465,17 @@ function checkoutPlanName(row) {
   return String(row?.plan_name || row?.plan_key || row?.last_plan_name || row?.last_plan_key || '').trim() || 'Credit purchase';
 }
 
+function checkoutEmailTrackingId(row) {
+  const raw = parseMetadata(row?.raw_session);
+  return String(
+    row?.email_tracking_id ||
+    row?.metadata?.email_tracking_id ||
+    raw?.metadata?.email_tracking_id ||
+    raw?.payment_intent_data?.metadata?.email_tracking_id ||
+    ''
+  ).trim();
+}
+
 function getSerpApiKeys() {
   return [
     ['SERPAPI_KEY', process.env.SERPAPI_KEY],
@@ -614,12 +625,30 @@ function topSums(rows, getKey, getValue, limit = 8) {
     .slice(0, limit);
 }
 
-function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], checkouts = [], contacts = [], webhookEvents = [], serpapi = null }) {
+function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], checkouts = [], contacts = [], webhookEvents = [], emailSends = [], emailEvents = [], serpapi = null }) {
   const now = Date.now();
   const dayAgo = now - (24 * 60 * 60 * 1000);
   const weekAgo = now - (7 * 24 * 60 * 60 * 1000);
   const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
   const paidCheckouts = (checkouts || []).filter(isPaidCheckout);
+  const sentEmailRows = (emailSends || []).filter((row) => String(row?.status || '').toLowerCase() === 'sent' || row?.sent_at);
+  const emailOpens = (emailEvents || []).filter((row) => String(row?.event_type || '').toLowerCase() === 'open');
+  const emailClicks = (emailEvents || []).filter((row) => String(row?.event_type || '').toLowerCase() === 'click');
+  const uniqueOpened = new Set(emailOpens.map((row) => String(row?.tracking_id || '')).filter(Boolean));
+  const uniqueClicked = new Set(emailClicks.map((row) => String(row?.tracking_id || '')).filter(Boolean));
+  const sendByTrackingId = new Map((emailSends || []).map((row) => [String(row?.tracking_id || ''), row]));
+  const purchasesFromTrackedEmail = paidCheckouts.filter((checkout) => {
+    const directTrackingId = checkoutEmailTrackingId(checkout);
+    if (directTrackingId && sendByTrackingId.has(directTrackingId)) return true;
+    const uid = String(checkout?.firebase_uid || '').trim();
+    const paidAt = toTimestamp(checkout?.paid_at || checkout?.credited_at || checkout?.created_at);
+    if (!uid || !paidAt) return false;
+    return sentEmailRows.some((send) =>
+      String(send?.firebase_uid || '').trim() === uid &&
+      toTimestamp(send?.sent_at || send?.created_at) <= paidAt
+    );
+  });
+  const emailRevenueCents = purchasesFromTrackedEmail.reduce((sum, row) => sum + Number(row?.amount_cents || 0), 0);
   const accountPlanRows = paidCheckouts.length ? [] : (users || []).filter((u) => String(u?.last_plan_name || u?.last_plan_key || '').trim());
   const planRows = paidCheckouts.length ? paidCheckouts : accountPlanRows;
   const reportErrors = (reports || []).filter((r) => String(r?.error || '').trim() || reportStatus(r).toLowerCase() === 'failed');
@@ -683,6 +712,14 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
       completion_rate: reports.length ? Math.round((completedReports.length / reports.length) * 1000) / 10 : null,
       total_revenue_cents: totalRevenueCents,
       paid_sessions: paidCheckouts.length,
+      reengage_emails_sent: sentEmailRows.length,
+      reengage_unique_opens: uniqueOpened.size,
+      reengage_unique_clicks: uniqueClicked.size,
+      reengage_open_rate: sentEmailRows.length ? Math.round((uniqueOpened.size / sentEmailRows.length) * 1000) / 10 : null,
+      reengage_click_rate: sentEmailRows.length ? Math.round((uniqueClicked.size / sentEmailRows.length) * 1000) / 10 : null,
+      reengage_purchase_count: purchasesFromTrackedEmail.length,
+      reengage_revenue_cents: emailRevenueCents,
+      reengage_purchase_rate: sentEmailRows.length ? Math.round((purchasesFromTrackedEmail.length / sentEmailRows.length) * 1000) / 10 : null,
       avg_order_value_cents: paidCheckouts.length ? Math.round(totalRevenueCents / paidCheckouts.length) : null,
       credits_used: totalCreditsUsed,
       credits_added: totalCreditsAdded,
@@ -703,6 +740,10 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
       failed_reports_by_day: bucketByDay(reportErrors, (r) => r?.created_at),
       users_by_day: bucketByDay(users, (u) => u?.created_at),
       revenue_by_day: bucketByDaySum(paidCheckouts, (w) => w?.paid_at || w?.credited_at || w?.created_at, (w) => Number(w?.amount_cents || 0) / 100),
+      reengage_sent_by_day: bucketByDay(sentEmailRows, (e) => e?.sent_at || e?.created_at),
+      reengage_opens_by_day: bucketByDay(emailOpens, (e) => e?.created_at),
+      reengage_clicks_by_day: bucketByDay(emailClicks, (e) => e?.created_at),
+      reengage_revenue_by_day: bucketByDaySum(purchasesFromTrackedEmail, (w) => w?.paid_at || w?.credited_at || w?.created_at, (w) => Number(w?.amount_cents || 0) / 100),
       credits_used_by_day: bucketByDaySum(creditsUsedRows, (t) => t?.created_at, (t) => Math.abs(Number(t?.credits_delta || 0))),
       credits_added_by_day: bucketByDaySum(creditsAddedRows, (t) => t?.created_at, (t) => Number(t?.credits_delta || 0)),
       contacts_by_day: bucketByDay(contacts, (c) => c?.created_at),
@@ -715,6 +756,7 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
       revenue_by_plan: topSums(paidCheckouts, checkoutPlanName, (w) => Number(w?.amount_cents || 0) / 100, 10),
       credit_transaction_types: topCounts(credits, (t) => t?.type || 'transaction', 10),
       contact_status: topCounts(contacts, (c) => c?.status || 'new', 10),
+      reengage_email_status: topCounts(emailSends, (e) => e?.status || 'unknown', 10),
       error_sources: topCounts([
         ...reportErrors.map((e) => ({ source: 'reports', ...e })),
         ...webhookErrors.map((e) => ({ source: 'webhooks', ...e }))
@@ -733,7 +775,35 @@ function buildAdminAnalyticsPayload({ users = [], reports = [], credits = [], ch
           credits_balance: Number(u?.credits_balance || 0),
           reports: reportCountByUser.get(String(u?.firebase_uid || '')) || 0
         })),
-      recent_purchases: recentPurchases
+      recent_purchases: recentPurchases,
+      reengage_recent_activity: sentEmailRows
+        .slice()
+        .sort((a, b) => toTimestamp(b?.sent_at || b?.created_at) - toTimestamp(a?.sent_at || a?.created_at))
+        .slice(0, 20)
+        .map((send) => {
+          const trackingId = String(send?.tracking_id || '');
+          const uid = String(send?.firebase_uid || '');
+          const sendTime = toTimestamp(send?.sent_at || send?.created_at);
+          const directPurchase = paidCheckouts.find((checkout) => checkoutEmailTrackingId(checkout) === trackingId);
+          const inferredPurchase = directPurchase || paidCheckouts.find((checkout) =>
+            uid &&
+            String(checkout?.firebase_uid || '') === uid &&
+            toTimestamp(checkout?.paid_at || checkout?.credited_at || checkout?.created_at) >= sendTime
+          );
+          return {
+            tracking_id: trackingId,
+            firebase_uid: uid,
+            email: String(send?.email || ''),
+            idea_name: String(send?.idea_name || ''),
+            target_country: String(send?.target_country || ''),
+            sent_at: send?.sent_at || send?.created_at || null,
+            opened: uniqueOpened.has(trackingId),
+            clicked: uniqueClicked.has(trackingId),
+            purchased: Boolean(inferredPurchase),
+            purchase_amount_cents: inferredPurchase ? Number(inferredPurchase?.amount_cents || 0) : 0,
+            purchase_at: inferredPurchase?.paid_at || inferredPurchase?.credited_at || inferredPurchase?.created_at || null
+          };
+        })
     },
     health: {
       failed_reports: reportErrors.length,
@@ -1365,7 +1435,7 @@ async function handler(req, res) {
       }
 
       if (action === 'admin_overview') {
-        const [users, reports, credits, checkouts, contacts, webhookEvents, serpapi] = await Promise.all([
+        const [users, reports, credits, checkouts, contacts, webhookEvents, emailSends, emailEvents, serpapi] = await Promise.all([
           fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
             select: 'firebase_uid,email,display_name,created_at,updated_at,credits_balance,total_credits_purchased,total_credits_used,last_plan_key,last_plan_name,last_purchase_at',
             order: 'created_at.desc',
@@ -1394,7 +1464,7 @@ async function handler(req, res) {
             limit: '5000'
           }).catch(() => []),
           fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
-            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid',
+            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid,raw_session',
             order: 'created_at.desc',
             limit: '2000'
           }, {
@@ -1420,6 +1490,16 @@ async function handler(req, res) {
             order: 'created_at.desc',
             limit: '2000'
           }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reengagement_email_sends', {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reengagement_email_events', {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '10000'
+          }).catch(() => []),
           fetchSerpApiCreditSummary().catch((err) => ({
             configured_keys: getSerpApiKeys().length,
             healthy_keys: 0,
@@ -1434,7 +1514,7 @@ async function handler(req, res) {
           }))
         ]);
 
-        return res.status(200).json(buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents, serpapi }));
+        return res.status(200).json(buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents, emailSends, emailEvents, serpapi }));
       }
 
       if (action === 'admin_list_users') {
@@ -1808,7 +1888,7 @@ async function handler(req, res) {
       }
 
       if (action === 'admin_analytics') {
-        const [reports, users, credits, checkouts, contacts, webhookEvents] = await Promise.all([
+        const [reports, users, credits, checkouts, contacts, webhookEvents, emailSends, emailEvents] = await Promise.all([
           fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reports', {
             select: 'id,user_id,idea_name,target_country,created_at,status,error,input,merged_json',
             order: 'created_at.desc',
@@ -1837,7 +1917,7 @@ async function handler(req, res) {
             limit: '5000'
           }).catch(() => []),
           fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'stripe_checkout_sessions', {
-            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid',
+            select: 'id,plan_key,plan_name,amount_cents,credits,currency,paid_at,credited_at,created_at,status,payment_status,firebase_uid,raw_session',
             order: 'created_at.desc',
             limit: '2000'
           }, {
@@ -1862,9 +1942,19 @@ async function handler(req, res) {
             select: '*',
             order: 'created_at.desc',
             limit: '2000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reengagement_email_sends', {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '5000'
+          }).catch(() => []),
+          fetchSupabaseRowsWithFallback(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'reengagement_email_events', {
+            select: '*',
+            order: 'created_at.desc',
+            limit: '10000'
           }).catch(() => [])
         ]);
-        const payload = buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents });
+        const payload = buildAdminAnalyticsPayload({ users, reports, credits, checkouts, contacts, webhookEvents, emailSends, emailEvents });
         return res.status(200).json({
           ...payload,
           summary: {
