@@ -251,7 +251,11 @@ async function handler(req, res) {
         const ideaName = String(recipient.idea_name || '').trim();
         const ideaDescription = String(recipient.product_idea || '').trim();
         const targetCountry = String(recipient.target_country || '').trim();
-        const subject = String(subject_line || `Your free preview for "${ideaName || 'your idea'}" is ready to unlock`).trim();
+        const subject = String(subject_line || '').trim()
+          .replace(/\{idea\}/g, ideaName || 'your idea')
+          .replace(/\{name\}/g, name || getFirstName(name, email))
+          .replace(/\{country\}/g, targetCountry || 'your market')
+          || `Your free preview for "${ideaName || 'your idea'}" is ready to unlock`;
 
         if (!email) {
           errors.push({ email, error: 'Missing email address' });
