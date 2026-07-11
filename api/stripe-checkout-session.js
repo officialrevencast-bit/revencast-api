@@ -1,6 +1,6 @@
 'use strict';
 
-const STRIPE_TEST_MODE = true; // Set to true for test mode, false for live mode
+const STRIPE_TEST_MODE = false; // Set to true for test mode, false for live mode
 const TEST_STRIPE_SECRET_KEY = 'sk_test_51TFcrjI2kzkJOatj17mUcA0JI0M15JtUkiqsdqLekyVDXbL6VyJjSTHhizlw7fejOWw4v9fyNJvpUKm5pPloDwyP00UVscsGxt';
 
 const PLAN_CATALOG = {
