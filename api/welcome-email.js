@@ -162,13 +162,7 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
     <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.75;">Your inputs are saved. Click, pay, and your complete report generates instantly — no re-entering anything.</p>
     <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 credits for $9.95</strong> (still $1.99/report) &rarr;</p>
 
-    <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 4px;">
-      <tr>
-        <td style="padding:10px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);">
-          <span style="color:#fbbf24;font-size:13px;line-height:1.5;font-weight:700;">⚡ Early access pricing won't last — lock in your rate now.</span>
-        </td>
-      </tr>
-    </table>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 4px;"><tr><td align="center" style="padding:10px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);text-align:center;"><span style="color:#fbbf24;font-size:13px;line-height:1.5;font-weight:700;">Early access pricing won't last — lock in your rate now.</span></td></tr></table>
   `;
 
   return `
@@ -188,8 +182,8 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
               <!-- Header with Logo -->
               <tr>
                 <td style="padding:34px 36px 28px;background:radial-gradient(circle at 85% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));text-align:center;border-bottom:1px solid rgba(255,255,255,.06);">
-                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:34px;width:auto;border:0;" />
-                  <div style="margin:18px 0 0;display:inline-block;padding:6px 14px;border-radius:999px;background:rgba(94,211,243,.10);border:1px solid rgba(94,211,243,.3);color:#8fe3fb;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;">Report Locked</div>
+                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:52px;width:auto;border:0;" />
+                  <br><div style="margin:18px 0 0;display:inline-block;padding:6px 14px;border-radius:999px;background:rgba(94,211,243,.10);border:1px solid rgba(94,211,243,.3);color:#8fe3fb;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;">Report Locked</div>
                   <h1 style="margin:14px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;letter-spacing:-.01em;">${firstName}, here's what your preview didn't show you</h1>
                 </td>
               </tr>
