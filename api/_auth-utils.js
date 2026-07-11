@@ -55,14 +55,24 @@ export async function authorizeRequest(req, res, options = {}) {
       if (token) {
         try {
           const auth = getFirebaseAuthClient();
-          const decoded = await auth.verifyIdToken(token);
+          // Second argument `true` = checkRevoked. This makes Firebase check whether
+          // the user's account was deleted or their tokens were revoked, and reject
+          // the token immediately instead of only failing once it naturally expires.
+          const decoded = await auth.verifyIdToken(token, true);
           const uid = String(decoded.uid || decoded.user_id || decoded.sub || '').trim();
           const email = String(decoded.email || '').trim().toLowerCase();
           if (!uid) {
             return res.status(401).json({ error: 'Unauthorized' });
           }
           return { ok: true, mode: 'bearer', uid, email, decoded };
-        } catch {
+        } catch (err) {
+          const code = String(err?.code || '');
+          if (code === 'auth/id-token-revoked') {
+            return res.status(401).json({ error: 'Session revoked', code: 'token_revoked' });
+          }
+          if (code === 'auth/user-not-found') {
+            return res.status(401).json({ error: 'Account no longer exists', code: 'user_deleted' });
+          }
           return res.status(401).json({ error: 'Unauthorized' });
         }
       }
