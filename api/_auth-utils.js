@@ -30,6 +30,24 @@ function getFirebaseAuthClient() {
   return firebaseAuthClient;
 }
 
+export async function deleteFirebaseAuthUser(uid) {
+  const safeUid = String(uid || '').trim();
+  if (!safeUid) return { ok: false, skipped: true };
+  const auth = getFirebaseAuthClient();
+  try {
+    await auth.revokeRefreshTokens(safeUid);
+  } catch (err) {
+    if (err?.code !== 'auth/user-not-found') throw err;
+  }
+  try {
+    await auth.deleteUser(safeUid);
+    return { ok: true, deleted: true };
+  } catch (err) {
+    if (err?.code === 'auth/user-not-found') return { ok: true, deleted: false, missing: true };
+    throw err;
+  }
+}
+
 export function setCors(res, methods = 'GET, POST, OPTIONS') {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-License-Key, X-Internal-Secret');
@@ -55,9 +73,6 @@ export async function authorizeRequest(req, res, options = {}) {
       if (token) {
         try {
           const auth = getFirebaseAuthClient();
-          // Second argument `true` = checkRevoked. This makes Firebase check whether
-          // the user's account was deleted or their tokens were revoked, and reject
-          // the token immediately instead of only failing once it naturally expires.
           const decoded = await auth.verifyIdToken(token, true);
           const uid = String(decoded.uid || decoded.user_id || decoded.sub || '').trim();
           const email = String(decoded.email || '').trim().toLowerCase();
@@ -65,14 +80,7 @@ export async function authorizeRequest(req, res, options = {}) {
             return res.status(401).json({ error: 'Unauthorized' });
           }
           return { ok: true, mode: 'bearer', uid, email, decoded };
-        } catch (err) {
-          const code = String(err?.code || '');
-          if (code === 'auth/id-token-revoked') {
-            return res.status(401).json({ error: 'Session revoked', code: 'token_revoked' });
-          }
-          if (code === 'auth/user-not-found') {
-            return res.status(401).json({ error: 'Account no longer exists', code: 'user_deleted' });
-          }
+        } catch {
           return res.status(401).json({ error: 'Unauthorized' });
         }
       }
