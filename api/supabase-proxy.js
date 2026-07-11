@@ -1196,6 +1196,43 @@ async function handler(req, res) {
       return res.status(200).json({ reports: docs });
     }
 
+    if (action === 'delete_preview_report') {
+      const reportId = String(req.body?.report_id || '').trim();
+      if (!reportId) return res.status(400).json({ error: 'report_id is required' });
+
+      const lookupUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(
+        reportId
+      )}&select=id,user_id,status,is_preview&limit=1`;
+      const lookupResp = await fetch(lookupUrl, {
+        method: 'GET',
+        headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+      });
+      const lookupPayload = await parseJsonSafe(lookupResp);
+      if (!lookupResp.ok) {
+        return res.status(500).json({
+          error: 'Failed to fetch preview report',
+          details: lookupPayload?.message || lookupPayload?.error || `supabase_${lookupResp.status}`
+        });
+      }
+      const report = Array.isArray(lookupPayload) ? lookupPayload[0] : null;
+      if (!report || String(report.user_id || '') !== String(auth.uid || '') || !isPreviewReport(report)) {
+        return res.status(404).json({ error: 'Preview report not found' });
+      }
+
+      const deleteResp = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(reportId)}`, {
+        method: 'DELETE',
+        headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+      });
+      const deletePayload = await parseJsonSafe(deleteResp);
+      if (!deleteResp.ok) {
+        return res.status(500).json({
+          error: 'Failed to delete preview report',
+          details: deletePayload?.message || deletePayload?.error || `supabase_${deleteResp.status}`
+        });
+      }
+      return res.status(200).json({ ok: true, deleted_preview_id: reportId });
+    }
+
     if (action === 'get_report_chat') {
       const reportId = String(req.body?.report_id || '').trim();
       if (!reportId) return res.status(400).json({ error: 'report_id is required' });
