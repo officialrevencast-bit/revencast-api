@@ -81,6 +81,91 @@ async function rpc(supabaseUrl, serviceKey, functionName, body) {
   return payload;
 }
 
+function buildWelcomeEmailHtml({ name, email }) {
+  const firstName = (name || email || '').split(/\s+/)[0] || 'there';
+  const safeFirstName = String(firstName).replace(/[&<>"']/g, '');
+  const safeEmail = String(email || '').replace(/[&<>"']/g, '');
+  return `
+    <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your Revencast account is ready — run your first market validation simulation.</div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45),0 0 0 1px rgba(94,211,243,.05);">
+              <tr><td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td></tr>
+              <tr>
+                <td style="padding:36px 36px 26px;background:radial-gradient(circle at 15% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
+                  <div style="display:inline-block;padding:6px 12px;border:1px solid rgba(94,211,243,.35);border-radius:999px;background:rgba(94,211,243,.08);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#5ed3f3;font-weight:800;">Revencast</div>
+                  <h1 style="margin:18px 0 0;font-size:30px;line-height:1.25;color:#ffffff;font-weight:800;letter-spacing:-.01em;">Welcome, ${safeFirstName}</h1>
+                  <p style="margin:12px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Your Revencast account is ready. You can now validate product ideas with market signals, competitor context, pricing guidance, and execution-focused reports.</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:30px 36px 34px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 12px;">
+                    <tr>
+                      <td style="padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
+                        <table role="presentation" cellspacing="0" cellpadding="0">
+                          <tr>
+                            <td valign="top" style="padding-right:14px;"><div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;">🚀</div></td>
+                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Run your first simulation</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Describe your idea, choose a target country, and generate a structured market validation report.</div></td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
+                        <table role="presentation" cellspacing="0" cellpadding="0">
+                          <tr>
+                            <td valign="top" style="padding-right:14px;"><div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;">📊</div></td>
+                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Read evidence-backed sections</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Each report is organized around opportunity, positioning, pricing, financials, risks, and roadmap decisions.</div></td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td><a href="https://revencast.com/simulation" style="display:inline-block;padding:14px 24px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;box-shadow:0 10px 24px rgba(94,211,243,.25);">Start a simulation &rarr;</a></td></tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">You are receiving this because an account was created for ${safeEmail}. Questions? Contact <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a>.</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+async function sendWelcomeEmail(resendApiKey, email, displayName) {
+  if (!resendApiKey || !email) return;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${resendApiKey}`,
+        'User-Agent': 'Revencast/1.0'
+      },
+      body: JSON.stringify({
+        from: 'Revencast <noreply@revencast.com>',
+        to: email,
+        subject: 'Welcome to Revencast',
+        html: buildWelcomeEmailHtml({ name: displayName, email }),
+        text: [
+          `Welcome to Revencast, ${displayName.split(/\s+/)[0] || email.split('@')[0] || 'there'}.`,
+          'Your account is ready.',
+          'Start a simulation: https://revencast.com/simulation',
+          'Questions? Contact support@revencast.com.'
+        ].join('\n')
+      })
+    });
+  } catch (err) {
+    logError('Welcome email send failed (non-blocking):', err?.message || err);
+  }
+}
+
 async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
   const displayName = String(body?.display_name || body?.name || '').trim();
   const email = String(body?.email || '').trim();
@@ -100,7 +185,22 @@ async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
   if (!response.ok) {
     throw new Error(payload?.message || payload?.error || `supabase_account_${response.status}`);
   }
-  return Array.isArray(payload) ? payload[0] : payload;
+  const row = Array.isArray(payload) ? payload[0] : payload;
+  
+  // Detect if this is a NEW user by checking created_at vs updated_at
+  // For a brand new insert, created_at and updated_at will be nearly identical
+  if (row && email) {
+    const createdAt = new Date(row.created_at || 0).getTime();
+    const updatedAt = new Date(row.updated_at || 0).getTime();
+    const isNewUser = (updatedAt - createdAt) < 2000; // Within 2 seconds = new insert
+    if (isNewUser) {
+      const resendApiKey = getEnv('RESEND_API_KEY');
+      // Fire welcome email asynchronously - do NOT block the response
+      sendWelcomeEmail(resendApiKey, email, displayName);
+    }
+  }
+  
+  return row;
 }
 
 async function updateUserAccountProfile(supabaseUrl, serviceKey, auth, body = {}) {
@@ -1706,4 +1806,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports.config = { runtime: 'nodejs' }; 
+module.exports.config = { runtime: 'nodejs' };
