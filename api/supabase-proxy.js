@@ -443,6 +443,10 @@ function reportStatus(row) {
   return String(row?.status || '').trim() || 'complete';
 }
 
+function isPreviewReport(row) {
+  return row?.is_preview === true || String(row?.status || '').trim().toLowerCase() === 'preview';
+}
+
 function reportCountry(row) {
   return String(
     row?.target_country ||
@@ -813,7 +817,7 @@ async function getLastPurchase(supabaseUrl, serviceKey, uid, account, transactio
 }
 
 async function handler(req, res) {
-  const { authorizeRequest, setCors } = await import('./_auth-utils.js');
+  const { authorizeRequest, deleteFirebaseAuthUser, setCors } = await import('./_auth-utils.js');
 
   // Always set CORS headers early. If the function crashes before a response is sent,
   // the platform may return a default 500 without these headers (causing CORS failures).
@@ -1129,6 +1133,9 @@ async function handler(req, res) {
       if (String(report.user_id || '') !== String(auth.uid || '')) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (req.body?.include_preview !== true && (isPreviewReport(report) || reportStatus(report).toLowerCase() !== 'complete')) {
+        return res.status(404).json({ error: 'Report not found' });
+      }
 
       return res.status(200).json({ report });
     }
@@ -1138,9 +1145,9 @@ async function handler(req, res) {
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.floor(limitRaw))) : 20;
       const cursor = String(req.body?.cursor || '').trim(); // cursor is ISO date string for created_at
 
-      const base = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?select=id,idea_name,target_country,created_at,status&user_id=eq.${encodeURIComponent(
+      const base = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?select=id,idea_name,target_country,created_at,status,is_preview&user_id=eq.${encodeURIComponent(
         auth.uid
-      )}&order=created_at.desc&limit=${limit}`;
+      )}&status=eq.complete&order=created_at.desc&limit=${limit}`;
       const withCursor = cursor ? `${base}&created_at=lt.${encodeURIComponent(cursor)}` : base;
 
       const response = await fetch(withCursor, {
@@ -1157,9 +1164,36 @@ async function handler(req, res) {
         });
       }
 
-      const docs = Array.isArray(payload) ? payload : [];
+      const docs = (Array.isArray(payload) ? payload : []).filter((row) => !isPreviewReport(row));
       const next_cursor = docs.length ? String(docs[docs.length - 1]?.created_at || '') : '';
       return res.status(200).json({ reports: docs, next_cursor });
+    }
+
+    if (action === 'list_preview_reports') {
+      const limitRaw = Number(req.body?.limit ?? 5);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(10, Math.floor(limitRaw))) : 5;
+      const url = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?select=id,idea_name,target_country,created_at,status,is_preview,input&user_id=eq.${encodeURIComponent(
+        auth.uid
+      )}&order=created_at.desc&limit=50`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+      });
+
+      const payload = await parseJsonSafe(response);
+      if (!response.ok) {
+        logError('Supabase list_preview_reports failed:', response.status, payload);
+        return res.status(500).json({
+          error: 'Failed to list preview reports',
+          details: payload?.message || payload?.error || `supabase_${response.status}`
+        });
+      }
+
+      const docs = (Array.isArray(payload) ? payload : [])
+        .filter((row) => isPreviewReport(row))
+        .slice(0, limit);
+      return res.status(200).json({ reports: docs });
     }
 
     if (action === 'get_report_chat') {
@@ -1483,6 +1517,15 @@ async function handler(req, res) {
         });
         const user = users[0];
         if (!user) return res.status(404).json({ error: 'User not found' });
+
+        try {
+          await deleteFirebaseAuthUser(uid);
+        } catch (err) {
+          return res.status(500).json({
+            error: 'Failed to delete Firebase auth user',
+            details: err?.message || err?.code || 'Unknown Firebase Auth error'
+          });
+        }
 
         // Delete user's reports
         await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?user_id=eq.${encodeURIComponent(uid)}`, {
