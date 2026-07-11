@@ -164,6 +164,25 @@ async function sendWelcomeEmail(resendApiKey, email, displayName) {
   }
 }
 
+async function claimWelcomeEmailSlot(supabaseUrl, serviceKey, uid) {
+  // Atomic conditional update: only succeeds (returns a row) for the ONE caller
+  // that flips welcome_email_sent_at from null -> now. Any concurrent or
+  // subsequent caller sees the filter no longer match and gets an empty array.
+  const now = new Date().toISOString();
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(uid)}&welcome_email_sent_at=is.null&select=firebase_uid`,
+    {
+      method: 'PATCH',
+      headers: supabaseHeaders(serviceKey, 'return=representation'),
+      body: JSON.stringify({ welcome_email_sent_at: now })
+    }
+  );
+  if (!response.ok) return false;
+  const payload = await parseJsonSafe(response);
+  const claimedRow = Array.isArray(payload) ? payload[0] : null;
+  return Boolean(claimedRow);
+}
+
 async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
   const displayName = String(body?.display_name || body?.name || '').trim();
   const email = String(body?.email || '').trim();
@@ -184,20 +203,20 @@ async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
     throw new Error(payload?.message || payload?.error || `supabase_account_${response.status}`);
   }
   const row = Array.isArray(payload) ? payload[0] : payload;
-  
-  // Detect if this is a NEW user by checking created_at vs updated_at
-  // For a brand new insert, created_at and updated_at will be nearly identical
+
+  // Send the welcome email at most once per user, ever — guaranteed by an
+  // atomic DB-level claim rather than inferring "new user" from timestamps.
   if (row && email) {
-    const createdAt = new Date(row.created_at || 0).getTime();
-    const updatedAt = new Date(row.updated_at || 0).getTime();
-    const isNewUser = (updatedAt - createdAt) < 2000; // Within 2 seconds = new insert
-    if (isNewUser) {
-      const resendApiKey = getEnv('RESEND_API_KEY');
-      // Fire welcome email asynchronously - do NOT block the response
-      sendWelcomeEmail(resendApiKey, email, displayName);
-    }
+    claimWelcomeEmailSlot(supabaseUrl, serviceKey, auth.uid)
+      .then((claimed) => {
+        if (claimed) {
+          const resendApiKey = getEnv('RESEND_API_KEY');
+          sendWelcomeEmail(resendApiKey, email, displayName);
+        }
+      })
+      .catch((err) => logError('Welcome email claim failed (non-blocking):', err?.message || err));
   }
-  
+
   return row;
 }
 
