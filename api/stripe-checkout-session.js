@@ -1,6 +1,6 @@
 'use strict';
 
-const STRIPE_TEST_MODE = false; // Set to true for test mode, false for live mode
+const STRIPE_TEST_MODE = true; // Set to true for test mode, false for live mode
 const TEST_STRIPE_SECRET_KEY = 'sk_test_51TFcrjI2kzkJOatj17mUcA0JI0M15JtUkiqsdqLekyVDXbL6VyJjSTHhizlw7fejOWw4v9fyNJvpUKm5pPloDwyP00UVscsGxt';
 
 const PLAN_CATALOG = {
@@ -67,6 +67,10 @@ function getCheckoutReturnContext(body = {}) {
   return { context: 'default', draftId: '' };
 }
 
+function getEmailTrackingId(body = {}) {
+  return String(body?.email_tracking_id || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
+}
+
 async function parseStripeJson(response) {
   const text = await response.text().catch(() => '');
   try {
@@ -76,7 +80,7 @@ async function parseStripeJson(response) {
   }
 }
 
-function buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, customerName }) {
+function buildCheckoutForm({ plan, auth, origin, returnContext, emailTrackingId, customerEmail, customerName }) {
   const params = new URLSearchParams();
   const successUrl = new URL(`${origin}/pricing`);
   successUrl.searchParams.set('checkout', 'success');
@@ -85,6 +89,7 @@ function buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, c
     successUrl.searchParams.set('return_context', 'simulation_resume');
     if (returnContext.draftId) successUrl.searchParams.set('draft_id', returnContext.draftId);
   }
+  if (emailTrackingId) successUrl.searchParams.set('email_tracking_id', emailTrackingId);
 
   params.set('mode', 'payment');
   params.set('success_url', successUrl.toString().replace('%7BCHECKOUT_SESSION_ID%7D', '{CHECKOUT_SESSION_ID}'));
@@ -109,10 +114,12 @@ function buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, c
   params.set('metadata[credits]', String(plan.credits));
   params.set('metadata[return_context]', returnContext?.context || 'default');
   if (returnContext?.draftId) params.set('metadata[draft_id]', returnContext.draftId);
+  if (emailTrackingId) params.set('metadata[email_tracking_id]', emailTrackingId);
   params.set('payment_intent_data[metadata][firebase_uid]', auth.uid);
   params.set('payment_intent_data[metadata][plan_key]', plan.plan_key);
   params.set('payment_intent_data[metadata][credits]', String(plan.credits));
   params.set('payment_intent_data[metadata][return_context]', returnContext?.context || 'default');
+  if (emailTrackingId) params.set('payment_intent_data[metadata][email_tracking_id]', emailTrackingId);
   return params;
 }
 
@@ -170,6 +177,7 @@ module.exports = async function handler(req, res) {
 
     const origin = getOrigin(req);
     const returnContext = getCheckoutReturnContext(req.body || {});
+    const emailTrackingId = getEmailTrackingId(req.body || {});
     const customerEmail = String(req.body?.customer_email || '').trim();
     const customerName = String(req.body?.customer_name || '').trim();
     const stripeResp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -178,7 +186,7 @@ module.exports = async function handler(req, res) {
         Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: buildCheckoutForm({ plan, auth, origin, returnContext, customerEmail, customerName })
+      body: buildCheckoutForm({ plan, auth, origin, returnContext, emailTrackingId, customerEmail, customerName })
     });
 
     const session = await parseStripeJson(stripeResp);
