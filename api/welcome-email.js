@@ -216,51 +216,11 @@ async function handler(req, res) {
     const action = String(req.body?.action || 'welcome').trim();
 
     // ─── Welcome Email Flow ───
+    // DISABLED: welcome emails are now sent exclusively from the supabase-proxy handler
+    // (ensureUserAccount → sendWelcomeEmail). This path is intentionally a no-op to avoid
+    // duplicate sends. Returns 200 so any caller expecting a success response isn't broken.
     if (action === 'welcome') {
-      // Use email from body first, then fall back to auth token (handles token propagation delay)
-      const email = String(req.body?.email || auth.email || '').trim().toLowerCase();
-      if (!email) return res.status(400).json({ error: 'Email is required' });
-
-      const displayName = String(req.body?.display_name || '').trim().slice(0, 120);
-
-      // Single send attempt — no retry, to avoid duplicate emails on transient response failures
-      try {
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            'User-Agent': 'Revencast/1.0'
-          },
-          body: JSON.stringify({
-            from: 'Revencast <noreply@revencast.com>',
-            to: email,
-            subject: 'Welcome to Revencast',
-            html: buildWelcomeEmailHtml({ name: displayName, email }),
-            text: [
-              `Welcome to Revencast, ${getFirstName(displayName, email)}.`,
-              'Your account is ready.',
-              'Start a simulation: https://revencast.com/simulation',
-              'Questions? Contact support@revencast.com.'
-            ].join('\n')
-          })
-        });
-
-        const payload = await parseJsonSafe(response);
-        if (response.ok) {
-          return res.status(200).json({ ok: true, email_id: payload?.id || '' });
-        }
-
-        return res.status(response.status || 500).json({
-          error: 'Welcome email failed',
-          details: payload?.message || payload?.error || `resend_${response.status}`
-        });
-      } catch (err) {
-        return res.status(500).json({
-          error: 'Welcome email failed',
-          details: err?.message || 'Network error'
-        });
-      }
+      return res.status(200).json({ ok: true, skipped: true, reason: 'Welcome email sending disabled on this endpoint' });
     }
 
     // ─── Re-engagement Email Flow ───
