@@ -86,9 +86,18 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
   const bodyContent = String(customBody || '').trim();
   
   const defaultBody = bodyContent || `
-    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">You recently ran a <strong style="color:#ffffff;">free preview simulation</strong> for <strong style="color:#5ed3f3;">"${idea}"</strong>${country ? ` targeting the <strong style="color:#5ed3f3;">${country}</strong> market` : ''}.</p>
-    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Your preview gave you a first look at scores, pricing hints, and risk signals. But the <strong style="color:#ffffff;">full report</strong> — competitive positioning, financial projections, execution roadmap, and industry context — is still locked.</p>
-    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Unlock your complete market validation report starting at just <strong style="color:#34d399;font-size:18px;">$1.99</strong> for a single credit. Each credit buys a full simulation with every section filled in — no placeholders, no locked cards.</p>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">You ran the numbers on <strong style="color:#5ed3f3;">${idea}</strong>. Now see the full picture.</p>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Your preview showed you the surface — scores, pricing hints, early signals. Locked underneath: the stuff that actually tells you if this idea works.</p>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Unlock the full report and get:</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 8px;margin:0 0 16px;">
+      <tr><td style="padding:6px 0;color:#b0b0b0;font-size:14px;line-height:1.5;">&bull; <strong style="color:#ffffff;">Competitive analysis</strong> — where you win, where you don't</td></tr>
+      <tr><td style="padding:6px 0;color:#b0b0b0;font-size:14px;line-height:1.5;">&bull; <strong style="color:#ffffff;">12-month financial projections & breakeven</strong></td></tr>
+      <tr><td style="padding:6px 0;color:#b0b0b0;font-size:14px;line-height:1.5;">&bull; <strong style="color:#ffffff;">Execution roadmap</strong> with real KPIs</td></tr>
+      <tr><td style="padding:6px 0;color:#b0b0b0;font-size:14px;line-height:1.5;">&bull; <strong style="color:#ffffff;">All 12 sections.</strong> Zero placeholders.</td></tr>
+    </table>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Your inputs are saved. Click, pay, and your complete report generates instantly — no re-entering anything.</p>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.7;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 credits for $9.95</strong> (still $1.99/report) &rarr;</p>
+    <p style="margin:0 0 16px;color:#fbbf24;font-size:14px;line-height:1.5;"><strong>Early access pricing won't last — lock in your rate now.</strong></p>
   `;
 
   return `
@@ -102,7 +111,7 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
               <tr>
                 <td style="padding:30px 30px 20px;background:linear-gradient(135deg,rgba(94,211,243,.18),rgba(22,117,169,.10));text-align:center;">
                   <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:36px;width:auto;border:0;" />
-                  <h1 style="margin:16px 0 0;font-size:28px;line-height:1.2;color:#ffffff;">${firstName}, your preview is ready to upgrade</h1>
+                  <h1 style="margin:16px 0 0;font-size:28px;line-height:1.2;color:#ffffff;">${firstName}, your full report is one click away</h1>
                 </td>
               </tr>
               
@@ -111,47 +120,25 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
                 <td style="padding:28px 30px;">
                   ${defaultBody}
                   
-                  <!-- What they get -->
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 10px;margin:20px 0;">
+                  <!-- CTA Button -->
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
-                      <td style="padding:14px 16px;background:rgba(94,211,243,.07);border:1px solid rgba(94,211,243,.14);border-radius:12px;">
-                        <div style="color:#5ed3f3;font-weight:800;font-size:14px;">&#10003; Full Competitive Analysis</div>
-                        <div style="margin-top:4px;color:#b0b0b0;font-size:13px;line-height:1.5;">Compare pricing, strengths, and gaps across real competitors.</div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:14px 16px;background:rgba(94,211,243,.07);border:1px solid rgba(94,211,243,.14);border-radius:12px;">
-                        <div style="color:#5ed3f3;font-weight:800;font-size:14px;">&#10003; Financial Projections & Breakeven</div>
-                        <div style="margin-top:4px;color:#b0b0b0;font-size:13px;line-height:1.5;">12-month revenue forecast, cost structure, and runway estimate.</div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:14px 16px;background:rgba(94,211,243,.07);border:1px solid rgba(94,211,243,.14);border-radius:12px;">
-                        <div style="color:#5ed3f3;font-weight:800;font-size:14px;">&#10003; Execution Roadmap & KPIs</div>
-                        <div style="margin-top:4px;color:#b0b0b0;font-size:13px;line-height:1.5;">Phased build plans, go-to-market channels, and success metrics.</div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:14px 16px;background:rgba(94,211,243,.07);border:1px solid rgba(94,211,243,.14);border-radius:12px;">
-                        <div style="color:#5ed3f3;font-weight:800;font-size:14px;">&#10003; All Sections Unlocked</div>
-                        <div style="margin-top:4px;color:#b0b0b0;font-size:13px;line-height:1.5;">No placeholder text. Every card, chart, and table filled with real data.</div>
+                      <td align="center">
+                        <a href="https://revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade" style="display:inline-block;padding:16px 28px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:16px;">Unlock Full Report — $1.99 &rarr;</a>
                       </td>
                     </tr>
                   </table>
                   
-                  <!-- CTA Button -->
-                  <a href="https://revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade" style="display:inline-block;margin-top:16px;padding:14px 22px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;">Unlock full report from $1.99</a>
-                  
                   <!-- Note -->
-                  <p style="margin:18px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;">Your preview data is safely saved. When you buy a credit, the full report will generate immediately with all sections complete — no need to re-enter your idea.</p>
+                  <p style="margin:18px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;">Your inputs are saved. Click, pay, and your complete report generates instantly — no re-entering anything.</p>
                 </td>
               </tr>
               
               <!-- Footer -->
               <tr>
                 <td style="padding:18px 30px;border-top:1px solid rgba(255,255,255,.08);color:#7f8b99;font-size:12px;line-height:1.6;">
-                  Sent from Revencast. You received this email because you ran a free preview simulation for "${idea}".<br />
-                  Questions? Contact <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a>.
+                  Questions? <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a><br />
+                  You're getting this because you ran a free preview for "${idea}".
                 </td>
               </tr>
             </table>
@@ -255,7 +242,7 @@ async function handler(req, res) {
           .replace(/\{idea\}/g, ideaName || 'your idea')
           .replace(/\{name\}/g, name || getFirstName(name, email))
           .replace(/\{country\}/g, targetCountry || 'your market')
-          || `Your free preview for "${ideaName || 'your idea'}" is ready to unlock`;
+          || `The data on "${ideaName || 'your idea'}" is ready. You just haven't seen it yet.`;
 
         if (!email) {
           errors.push({ email, error: 'Missing email address' });
