@@ -1454,6 +1454,66 @@ async function handler(req, res) {
         });
       }
 
+      if (action === 'admin_delete_user') {
+        const uid = String(req.body?.uid || '').trim();
+        if (!uid) return res.status(400).json({ error: 'uid is required' });
+
+        // Verify user exists
+        const users = await fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
+          firebase_uid: `eq.${uid}`,
+          select: 'firebase_uid,email,display_name',
+          limit: '1'
+        });
+        const user = users[0];
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Delete user's reports
+        await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reports?user_id=eq.${encodeURIComponent(uid)}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+        }).catch(() => null);
+
+        // Delete user's credit transactions
+        await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/credit_transactions?firebase_uid=eq.${encodeURIComponent(uid)}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+        }).catch(() => null);
+
+        // Delete user's chat messages
+        await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/report_chat_messages?user_id=eq.${encodeURIComponent(uid)}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+        }).catch(() => null);
+
+        // Delete user's checkout sessions
+        await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/stripe_checkout_sessions?firebase_uid=eq.${encodeURIComponent(uid)}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+        }).catch(() => null);
+
+        // Finally delete the user account itself
+        const deleteResp = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/user_accounts?firebase_uid=eq.${encodeURIComponent(uid)}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY)
+        });
+        const deletePayload = await parseJsonSafe(deleteResp);
+        if (!deleteResp.ok) {
+          return res.status(500).json({
+            error: 'Failed to delete user',
+            details: deletePayload?.message || deletePayload?.error || `supabase_${deleteResp.status}`
+          });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          deleted_user: {
+            firebase_uid: user.firebase_uid,
+            email: user.email,
+            display_name: user.display_name
+          }
+        });
+      }
+
       if (action === 'admin_list_preview_users') {
         const q = String(req.body?.query || '').trim().toLowerCase();
         const from = String(req.body?.from || '').trim();
