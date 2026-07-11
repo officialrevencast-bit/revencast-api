@@ -44,7 +44,7 @@ function buildWelcomeEmailHtml({ name, email }) {
               </tr>
               <tr>
                 <td style="padding:36px 36px 26px;background:radial-gradient(circle at 15% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
-                  <div style="display:inline-block;padding:6px 12px;border:1px solid rgba(94,211,243,.35);border-radius:999px;background:rgba(94,211,243,.08);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#5ed3f3;font-weight:800;">Revencast</div>
+                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:28px;width:auto;border:0;display:block;" />
                   <h1 style="margin:18px 0 0;font-size:30px;line-height:1.25;color:#ffffff;font-weight:800;letter-spacing:-.01em;">Welcome, ${firstName}</h1>
                   <p style="margin:12px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Your Revencast account is ready. You can now validate product ideas with market signals, competitor context, pricing guidance, and execution-focused reports.</p>
                 </td>
@@ -57,7 +57,7 @@ function buildWelcomeEmailHtml({ name, email }) {
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
                             <td valign="top" style="padding-right:14px;">
-                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;">🚀</div>
+                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;"></div>
                             </td>
                             <td>
                               <div style="color:#ffffff;font-weight:800;font-size:15px;">Run your first simulation</div>
@@ -72,7 +72,7 @@ function buildWelcomeEmailHtml({ name, email }) {
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
                             <td valign="top" style="padding-right:14px;">
-                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;">📊</div>
+                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;"></div>
                             </td>
                             <td>
                               <div style="color:#ffffff;font-weight:800;font-size:15px;">Read evidence-backed sections</div>
