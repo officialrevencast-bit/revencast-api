@@ -1,7 +1,18 @@
 'use strict';
 
+const crypto = require('crypto');
+
 function getEnv(name) {
   return String(process.env[name] || '').trim();
+}
+
+function supabaseHeaders(serviceRoleKey, prefer = '') {
+  return {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    'Content-Type': 'application/json',
+    ...(prefer ? { Prefer: prefer } : {})
+  };
 }
 
 async function parseJsonSafe(response) {
@@ -16,10 +27,10 @@ async function parseJsonSafe(response) {
 
 function escapeHtml(value) {
   return String(value || '')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
 
@@ -28,6 +39,155 @@ function getFirstName(name, email) {
   if (cleanName) return cleanName.split(/\s+/)[0];
   const local = String(email || '').split('@')[0];
   return local || 'there';
+}
+
+function getOrigin(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
+  const proto = String(req.headers['x-forwarded-proto'] || 'https').trim();
+  return host ? `${proto}://${host}` : 'https://www.revencast.com';
+}
+
+function buildTrackingId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${crypto.randomBytes(12).toString('hex')}`;
+}
+
+function buildTrackedUrls(req, trackingId) {
+  const origin = getOrigin(req).replace(/\/+$/, '');
+  const destination = new URL('/pricing', origin);
+  destination.searchParams.set('return_context', 'simulation_resume');
+  destination.searchParams.set('utm_source', 'email');
+  destination.searchParams.set('utm_medium', 'reengagement');
+  destination.searchParams.set('utm_campaign', 'preview_upgrade');
+  destination.searchParams.set('email_tracking_id', trackingId);
+
+  const click = new URL('/api/welcome-email', origin);
+  click.searchParams.set('e', 'click');
+  click.searchParams.set('t', trackingId);
+  click.searchParams.set('u', destination.toString());
+
+  const open = new URL('/api/welcome-email', origin);
+  open.searchParams.set('e', 'open');
+  open.searchParams.set('t', trackingId);
+
+  return { clickUrl: click.toString(), openPixelUrl: open.toString(), destinationUrl: destination.toString() };
+}
+
+async function insertTrackingSend(row) {
+  const SUPABASE_URL = getEnv('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return false;
+  try {
+    const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reengagement_email_sends`, {
+      method: 'POST',
+      headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=minimal'),
+      body: JSON.stringify(row)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function updateTrackingSend(trackingId, updates) {
+  const SUPABASE_URL = getEnv('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !trackingId) return;
+  try {
+    await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reengagement_email_sends?tracking_id=eq.${encodeURIComponent(trackingId)}`, {
+      method: 'PATCH',
+      headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=minimal'),
+      body: JSON.stringify({ ...updates, updated_at: new Date().toISOString() })
+    });
+  } catch {}
+}
+
+async function insertTrackingEvent(row) {
+  const SUPABASE_URL = getEnv('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reengagement_email_events`, {
+      method: 'POST',
+      headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY, 'return=minimal'),
+      body: JSON.stringify(row)
+    });
+  } catch {}
+}
+
+function parseTrackingId(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
+}
+
+function safeTargetUrl(raw) {
+  const fallback = 'https://www.revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade';
+  const value = String(raw || '').trim();
+  if (!value) return fallback;
+  try {
+    const url = new URL(value, 'https://www.revencast.com');
+    const host = url.hostname.toLowerCase();
+    if (host === 'revencast.com' || host === 'www.revencast.com') return url.toString();
+  } catch {}
+  return fallback;
+}
+
+async function getTrackingSendRow(trackingId) {
+  const SUPABASE_URL = getEnv('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !trackingId) return null;
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/reengagement_email_sends?tracking_id=eq.${encodeURIComponent(trackingId)}&select=tracking_id,firebase_uid,email&limit=1`,
+      { headers: supabaseHeaders(SUPABASE_SERVICE_ROLE_KEY) }
+    );
+    const payload = await parseJsonSafe(response);
+    if (!response.ok) return null;
+    return Array.isArray(payload) ? payload[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function transparentGif() {
+  return Buffer.from('R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64');
+}
+
+async function handleTrackingRequest(req, res) {
+  const trackingId = parseTrackingId(req.query?.t);
+  const eventType = String(req.query?.e || '').trim().toLowerCase() === 'click' ? 'click' : 'open';
+  const targetUrl = safeTargetUrl(req.query?.u);
+
+  if (trackingId) {
+    try {
+      const send = await getTrackingSendRow(trackingId);
+      if (send) {
+        await insertTrackingEvent({
+          tracking_id: trackingId,
+          event_type: eventType,
+          firebase_uid: send.firebase_uid || null,
+          email: send.email || null,
+          target_url: eventType === 'click' ? targetUrl : null,
+          user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
+          ip_address: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim().slice(0, 120),
+          referrer: String(req.headers.referer || req.headers.referrer || '').slice(0, 500)
+        });
+      }
+    } catch {
+      // Tracking must never block an email open pixel or click redirect.
+    }
+  }
+
+  if (eventType === 'click') {
+    res.statusCode = 302;
+    res.setHeader('Location', targetUrl);
+    return res.end();
+  }
+
+  const gif = transparentGif();
+  res.setHeader('Content-Type', 'image/gif');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Content-Length', String(gif.length));
+  return res.status(200).end(gif);
 }
 
 function buildWelcomeEmailHtml({ name, email }) {
@@ -99,7 +259,7 @@ function buildWelcomeEmailHtml({ name, email }) {
   `;
 }
 
-function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody }) {
+function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody, ctaUrl, openPixelUrl }) {
   const firstName = escapeHtml(getFirstName(name, email));
   const idea = escapeHtml(String(ideaName || 'your idea').trim());
   const description = escapeHtml(String(ideaDescription || '').trim());
@@ -172,7 +332,7 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">
                     <tr>
                       <td align="center">
-                        <a href="https://revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade" style="display:inline-block;padding:17px 32px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:16px;box-shadow:0 12px 28px rgba(94,211,243,.28);">Unlock Full Report — $1.99 &rarr;</a>
+                        <a href="${escapeHtml(ctaUrl || 'https://www.revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade')}" style="display:inline-block;padding:17px 32px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:16px;box-shadow:0 12px 28px rgba(94,211,243,.28);">Unlock Full Report — $1.99 &rarr;</a>
                       </td>
                     </tr>
                   </table>
@@ -186,6 +346,7 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
                 </td>
               </tr>
             </table>
+            ${openPixelUrl ? `<img src="${escapeHtml(openPixelUrl)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;overflow:hidden;" />` : ''}
           </td>
         </tr>
       </table>
@@ -195,10 +356,11 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
 
 async function handler(req, res) {
   const { authorizeRequest, setCors } = await import('./_auth-utils.js');
-  setCors(res, 'POST, OPTIONS');
+  setCors(res, 'GET, POST, OPTIONS');
 
   try {
     if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method === 'GET') return handleTrackingRequest(req, res);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     const auth = await authorizeRequest(req, res, {
@@ -253,6 +415,8 @@ async function handler(req, res) {
         const ideaName = String(recipient.idea_name || '').trim();
         const ideaDescription = String(recipient.product_idea || '').trim();
         const targetCountry = String(recipient.target_country || '').trim();
+        const trackingId = buildTrackingId();
+        const { clickUrl, openPixelUrl, destinationUrl } = buildTrackedUrls(req, trackingId);
         const subject = String(subject_line || '').trim()
           .replace(/\{idea\}/g, ideaName || 'your idea')
           .replace(/\{name\}/g, name || getFirstName(name, email))
@@ -265,6 +429,18 @@ async function handler(req, res) {
         }
 
         try {
+          await insertTrackingSend({
+            tracking_id: trackingId,
+            firebase_uid: String(recipient.firebase_uid || '').trim() || null,
+            email,
+            display_name: name || null,
+            idea_name: ideaName || null,
+            target_country: targetCountry || null,
+            preview_report_id: String(recipient.preview_report_id || recipient.latest_preview_id || '').trim() || null,
+            subject,
+            status: 'pending'
+          });
+
           const response = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: {
@@ -282,7 +458,9 @@ async function handler(req, res) {
                 ideaName,
                 ideaDescription,
                 targetCountry,
-                customBody: custom_body || ''
+                customBody: custom_body || '',
+                ctaUrl: clickUrl,
+                openPixelUrl
               }),
               text: [
                 `${name ? getFirstName(name, email) : 'Hi'},`,
@@ -299,7 +477,7 @@ async function handler(req, res) {
                 '- Execution roadmap with KPIs and milestones',
                 '- All sections fully filled — no placeholders',
                 '',
-                'Upgrade here: https://revencast.com/pricing',
+                `Upgrade here: ${destinationUrl}`,
                 '',
                 'Your preview data is safely saved. No need to re-enter your idea.',
                 '',
@@ -310,14 +488,34 @@ async function handler(req, res) {
 
           const payload = await parseJsonSafe(response);
           if (response.ok) {
-            results.push({ email, status: 'sent', email_id: payload?.id || '' });
+            const sentAt = new Date().toISOString();
+            await updateTrackingSend(trackingId, {
+              status: 'sent',
+              provider_email_id: payload?.id || null,
+              sent_at: sentAt
+            });
+            await insertTrackingEvent({
+              tracking_id: trackingId,
+              event_type: 'sent',
+              firebase_uid: String(recipient.firebase_uid || '').trim() || null,
+              email
+            });
+            results.push({ email, status: 'sent', email_id: payload?.id || '', tracking_id: trackingId });
           } else {
+            await updateTrackingSend(trackingId, {
+              status: 'failed',
+              error: payload?.message || payload?.error || `resend_${response.status}`
+            });
             errors.push({
               email,
               error: payload?.message || payload?.error || `resend_${response.status}`
             });
           }
         } catch (err) {
+          await updateTrackingSend(trackingId, {
+            status: 'failed',
+            error: err?.message || 'Network error'
+          });
           errors.push({ email, error: err?.message || 'Network error' });
         }
       }
@@ -334,7 +532,7 @@ async function handler(req, res) {
     return res.status(400).json({ error: `Unknown action: ${action}` });
 
   } catch (err) {
-    setCors(res, 'POST, OPTIONS');
+    setCors(res, 'GET, POST, OPTIONS');
     return res.status(500).json({ error: 'Email request failed', details: err?.message || 'Unknown error' });
   }
 }
