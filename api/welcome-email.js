@@ -296,7 +296,7 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
               </tr>
               <tr>
                 <td style="padding:30px 36px 26px;background:rgba(94,211,243,.07);border-bottom:1px solid rgba(255,255,255,.06);">
-                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:34px;width:auto;border:0;display:block;" />
+                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:50px;width:auto;border:0;display:block;" />
                   <h1 style="margin:20px 0 0;font-size:25px;line-height:1.32;color:#ffffff;font-weight:800;">${firstName}, your preview is still saved</h1>
                   <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.65;">You can continue the simulation whenever you are ready.</p>
                 </td>
