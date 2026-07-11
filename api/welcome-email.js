@@ -34,19 +34,14 @@ function buildWelcomeEmailHtml({ name, email }) {
   const firstName = escapeHtml(getFirstName(name, email));
   return `
     <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
-      <!-- Preheader (hidden preview text) -->
       <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your Revencast account is ready — run your first market validation simulation.</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;">
         <tr>
           <td align="center">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45),0 0 0 1px rgba(94,211,243,.05);">
-
-              <!-- Top accent bar -->
               <tr>
                 <td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td>
               </tr>
-
-              <!-- Header -->
               <tr>
                 <td style="padding:36px 36px 26px;background:radial-gradient(circle at 15% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
                   <div style="display:inline-block;padding:6px 12px;border:1px solid rgba(94,211,243,.35);border-radius:999px;background:rgba(94,211,243,.08);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#5ed3f3;font-weight:800;">Revencast</div>
@@ -54,8 +49,6 @@ function buildWelcomeEmailHtml({ name, email }) {
                   <p style="margin:12px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Your Revencast account is ready. You can now validate product ideas with market signals, competitor context, pricing guidance, and execution-focused reports.</p>
                 </td>
               </tr>
-
-              <!-- Body -->
               <tr>
                 <td style="padding:30px 36px 34px;">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 12px;">
@@ -90,7 +83,6 @@ function buildWelcomeEmailHtml({ name, email }) {
                       </td>
                     </tr>
                   </table>
-
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;">
                     <tr>
                       <td>
@@ -100,8 +92,6 @@ function buildWelcomeEmailHtml({ name, email }) {
                   </table>
                 </td>
               </tr>
-
-              <!-- Footer -->
               <tr>
                 <td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">
                   You are receiving this because an account was created for ${escapeHtml(email)}. Questions? Contact <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a>.
@@ -167,19 +157,14 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
 
   return `
     <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
-      <!-- Preheader (hidden preview text) -->
       <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your full report on ${idea} is ready to unlock for $1.99 — competitive analysis, financials, and roadmap included.</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;">
         <tr>
           <td align="center">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45),0 0 0 1px rgba(94,211,243,.05);">
-
-              <!-- Top accent bar -->
               <tr>
                 <td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td>
               </tr>
-
-              <!-- Header with Logo -->
               <tr>
                 <td style="padding:34px 36px 28px;background:radial-gradient(circle at 85% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));text-align:center;border-bottom:1px solid rgba(255,255,255,.06);">
                   <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:52px;width:auto;border:0;" />
@@ -187,13 +172,9 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
                   <h1 style="margin:14px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;letter-spacing:-.01em;">${firstName}, here's what your preview didn't show you</h1>
                 </td>
               </tr>
-
-              <!-- Body -->
               <tr>
                 <td style="padding:30px 36px 8px;">
                   ${defaultBody}
-
-                  <!-- CTA Button -->
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">
                     <tr>
                       <td align="center">
@@ -201,13 +182,9 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
                       </td>
                     </tr>
                   </table>
-
-                  <!-- Note -->
                   <p style="margin:16px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;text-align:center;">Your inputs are saved. Click, pay, and your complete report generates instantly — no re-entering anything.</p>
                 </td>
               </tr>
-
-              <!-- Footer -->
               <tr>
                 <td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">
                   Questions? <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a><br />
@@ -246,39 +223,57 @@ async function handler(req, res) {
 
     // ─── Welcome Email Flow ───
     if (action === 'welcome') {
-      const email = String(auth.email || '').trim().toLowerCase();
-      if (!email) return res.status(400).json({ error: 'Authenticated email is required' });
+      // Use email from body first, then fall back to auth token (handles token propagation delay)
+      const email = String(req.body?.email || auth.email || '').trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: 'Email is required' });
 
       const displayName = String(req.body?.display_name || '').trim().slice(0, 120);
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          'User-Agent': 'Revencast/1.0'
-        },
-        body: JSON.stringify({
-          from: 'Revencast <noreply@revencast.com>',
-          to: email,
-          subject: 'Welcome to Revencast',
-          html: buildWelcomeEmailHtml({ name: displayName, email }),
-          text: [
-            `Welcome to Revencast, ${getFirstName(displayName, email)}.`,
-            'Your account is ready.',
-            'Start a simulation: https://revencast.com/simulation',
-            'Questions? Contact support@revencast.com.'
-          ].join('\n')
-        })
-      });
 
-      const payload = await parseJsonSafe(response);
-      if (!response.ok) {
-        return res.status(response.status).json({
-          error: payload?.message || payload?.error || `resend_${response.status}`
-        });
+      // Retry sending once with 2s delay for Vercel cold start + Resend readiness
+      let lastError = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${RESEND_API_KEY}`,
+              'User-Agent': 'Revencast/1.0'
+            },
+            body: JSON.stringify({
+              from: 'Revencast <noreply@revencast.com>',
+              to: email,
+              subject: 'Welcome to Revencast',
+              html: buildWelcomeEmailHtml({ name: displayName, email }),
+              text: [
+                `Welcome to Revencast, ${getFirstName(displayName, email)}.`,
+                'Your account is ready.',
+                'Start a simulation: https://revencast.com/simulation',
+                'Questions? Contact support@revencast.com.'
+              ].join('\n')
+            })
+          });
+
+          const payload = await parseJsonSafe(response);
+          if (response.ok) {
+            return res.status(200).json({ ok: true, email_id: payload?.id || '' });
+          }
+          lastError = { status: response.status, message: payload?.message || payload?.error || `resend_${response.status}` };
+        } catch (err) {
+          lastError = { status: 0, message: err?.message || 'Network error' };
+        }
+
+        // If first attempt failed, wait 2 seconds and retry
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }
 
-      return res.status(200).json({ ok: true, email_id: payload?.id || '' });
+      // Both attempts failed
+      return res.status(lastError?.status || 500).json({
+        error: 'Welcome email failed after retry',
+        details: lastError?.message || 'Unknown error'
+      });
     }
 
     // ─── Re-engagement Email Flow ───
@@ -293,7 +288,7 @@ async function handler(req, res) {
       }
 
       const { recipients, custom_body, subject_line } = req.body || {};
-      
+
       if (!Array.isArray(recipients) || recipients.length === 0) {
         return res.status(400).json({ error: 'recipients array is required with at least one recipient' });
       }
