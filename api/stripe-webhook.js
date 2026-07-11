@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 
-const STRIPE_TEST_MODE = false; // Must match the value in stripe-checkout-session.js
+const STRIPE_TEST_MODE = true; // Must match the value in stripe-checkout-session.js
 const TEST_STRIPE_WEBHOOK_SECRET = 'whsec_iZRmc2yEs11rh1hiN7v4CQ4a3JkzxJWE';
 const EVENT_TOLERANCE_SECONDS = 300;
 
@@ -126,7 +126,8 @@ async function grantSupabaseCredits(supabaseUrl, serviceKey, session) {
         amount_total: session.amount_total || null,
         currency: session.currency || null,
         payment_intent: session.payment_intent || null,
-        customer: session.customer || null
+        customer: session.customer || null,
+        email_tracking_id: metadata.email_tracking_id || null
       }
     })
   });
@@ -297,7 +298,8 @@ async function handleCheckoutPaid(session) {
       amount_cents: Number(session.amount_total || 0),
       currency: String(session.currency || 'usd'),
       status: 'pending',
-      payment_status: session.payment_status || 'unpaid'
+      payment_status: session.payment_status || 'unpaid',
+      raw_session: session
     });
   }
 
@@ -311,7 +313,8 @@ async function handleCheckoutPaid(session) {
     status: 'paid',
     payment_status: session.payment_status || 'paid',
     paid_at: new Date().toISOString(),
-    credited_at: alreadyCredited ? row.credited_at : new Date().toISOString()
+    credited_at: alreadyCredited ? row.credited_at : new Date().toISOString(),
+    raw_session: session
   });
 
   // Send confirmation email (idempotent - only send once per session)
