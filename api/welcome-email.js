@@ -56,9 +56,6 @@ function buildWelcomeEmailHtml({ name, email }) {
                       <td style="padding:18px 18px 18px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
-                            <td valign="top" style="padding-right:14px;">
-                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;"></div>
-                            </td>
                             <td>
                               <div style="color:#ffffff;font-weight:800;font-size:15px;">Run your first simulation</div>
                               <div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Describe your idea, choose a target country, and generate a structured market validation report.</div>
@@ -71,9 +68,6 @@ function buildWelcomeEmailHtml({ name, email }) {
                       <td style="padding:18px 18px 18px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
-                            <td valign="top" style="padding-right:14px;">
-                              <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5ed3f3,#1675a9);text-align:center;line-height:30px;font-size:15px;"></div>
-                            </td>
                             <td>
                               <div style="color:#ffffff;font-weight:800;font-size:15px;">Read evidence-backed sections</div>
                               <div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Each report is organized around opportunity, positioning, pricing, financials, risks, and roadmap decisions.</div>
@@ -229,51 +223,44 @@ async function handler(req, res) {
 
       const displayName = String(req.body?.display_name || '').trim().slice(0, 120);
 
-      // Retry sending once with 2s delay for Vercel cold start + Resend readiness
-      let lastError = null;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          const response = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${RESEND_API_KEY}`,
-              'User-Agent': 'Revencast/1.0'
-            },
-            body: JSON.stringify({
-              from: 'Revencast <noreply@revencast.com>',
-              to: email,
-              subject: 'Welcome to Revencast',
-              html: buildWelcomeEmailHtml({ name: displayName, email }),
-              text: [
-                `Welcome to Revencast, ${getFirstName(displayName, email)}.`,
-                'Your account is ready.',
-                'Start a simulation: https://revencast.com/simulation',
-                'Questions? Contact support@revencast.com.'
-              ].join('\n')
-            })
-          });
+      // Single send attempt — no retry, to avoid duplicate emails on transient response failures
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${RESEND_API_KEY}`,
+            'User-Agent': 'Revencast/1.0'
+          },
+          body: JSON.stringify({
+            from: 'Revencast <noreply@revencast.com>',
+            to: email,
+            subject: 'Welcome to Revencast',
+            html: buildWelcomeEmailHtml({ name: displayName, email }),
+            text: [
+              `Welcome to Revencast, ${getFirstName(displayName, email)}.`,
+              'Your account is ready.',
+              'Start a simulation: https://revencast.com/simulation',
+              'Questions? Contact support@revencast.com.'
+            ].join('\n')
+          })
+        });
 
-          const payload = await parseJsonSafe(response);
-          if (response.ok) {
-            return res.status(200).json({ ok: true, email_id: payload?.id || '' });
-          }
-          lastError = { status: response.status, message: payload?.message || payload?.error || `resend_${response.status}` };
-        } catch (err) {
-          lastError = { status: 0, message: err?.message || 'Network error' };
+        const payload = await parseJsonSafe(response);
+        if (response.ok) {
+          return res.status(200).json({ ok: true, email_id: payload?.id || '' });
         }
 
-        // If first attempt failed, wait 2 seconds and retry
-        if (attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
+        return res.status(response.status || 500).json({
+          error: 'Welcome email failed',
+          details: payload?.message || payload?.error || `resend_${response.status}`
+        });
+      } catch (err) {
+        return res.status(500).json({
+          error: 'Welcome email failed',
+          details: err?.message || 'Network error'
+        });
       }
-
-      // Both attempts failed
-      return res.status(lastError?.status || 500).json({
-        error: 'Welcome email failed after retry',
-        details: lastError?.message || 'Unknown error'
-      });
     }
 
     // ─── Re-engagement Email Flow ───
