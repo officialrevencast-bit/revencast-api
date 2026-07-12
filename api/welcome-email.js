@@ -351,6 +351,7 @@ function buildFullReportReEngageEmailHtml({ name, email, ideaName, ideaDescripti
           <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">1.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Competitor context</strong> with positioning and pricing comparison</td></tr>
           <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">2.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Financial estimates</strong> including revenue, costs, and breakeven signals</td></tr>
           <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">3.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Execution roadmap</strong> with milestones, KPIs, and risk notes</td></tr>
+          <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">4.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Public sentiment</strong> pulled from forums, and social discussion</td></tr>
         </table>
       </div>
     </div>
