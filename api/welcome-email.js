@@ -259,7 +259,12 @@ function buildWelcomeEmailHtml({ name, email }) {
   `;
 }
 
-function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody, ctaUrl, openPixelUrl }) {
+function parseReEngageTemplateKey(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'full_report' ? 'full_report' : 'saved_preview';
+}
+
+function buildSavedPreviewReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody, ctaUrl, openPixelUrl }) {
   const firstName = escapeHtml(getFirstName(name, email));
   const idea = escapeHtml(String(ideaName || 'your idea').trim());
   const description = escapeHtml(String(ideaDescription || '').trim());
@@ -329,6 +334,123 @@ function buildReEngageEmailHtml({ name, email, ideaName, ideaDescription, target
   `;
 }
 
+function buildFullReportReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody, ctaUrl, openPixelUrl }) {
+  const firstName = escapeHtml(getFirstName(name, email));
+  const idea = escapeHtml(String(ideaName || 'your idea').trim());
+  const description = escapeHtml(String(ideaDescription || '').trim());
+  const country = escapeHtml(String(targetCountry || '').trim());
+  const bodyContent = String(customBody || '').trim();
+
+  const defaultBody = bodyContent || `
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.75;">You already ran a preview for <strong style="color:#5ed3f3;">${idea}</strong>${country ? ` in ${country}` : ''}. The saved preview gave you the first signals; the complete simulation adds the deeper business view.</p>
+    <p style="margin:0 0 22px;color:#d0d0d0;font-size:15px;line-height:1.75;">If you are still deciding whether this idea is worth pursuing, the next step gives you the sections that are most useful for comparison, planning, and execution.</p>
+    <div style="margin:0 0 22px;padding:2px;border-radius:16px;background:linear-gradient(135deg,rgba(94,211,243,.35),rgba(22,117,169,.15));">
+      <div style="padding:20px;border-radius:14px;background:#171b20;">
+        <div style="margin:0 0 14px;color:#8fe3fb;font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;">Complete simulation includes</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 10px;">
+          <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">1.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Competitor context</strong> with positioning and pricing comparison</td></tr>
+          <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">2.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Financial estimates</strong> including revenue, costs, and breakeven signals</td></tr>
+          <tr><td width="28" valign="top" style="color:#5ed3f3;font-weight:900;">3.</td><td style="color:#e6e9ec;font-size:14px;line-height:1.6;"><strong style="color:#ffffff;">Execution roadmap</strong> with milestones, KPIs, and risk notes</td></tr>
+        </table>
+      </div>
+    </div>
+    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.75;">Your inputs are saved. Click, pay, and your complete report generates instantly - no re-entering anything.</p>
+    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 credits for $9.95</strong> and keep validating without starting from scratch.</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 4px;"><tr><td align="center" style="padding:10px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);text-align:center;"><span style="color:#fbbf24;font-size:13px;line-height:1.5;font-weight:700;">Early access pricing will not last - lock in your rate now.</span></td></tr></table>
+  `;
+
+  return `
+    <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your Revencast preview for ${idea} can be completed from the saved simulation.</div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 18px 46px rgba(0,0,0,.40);">
+              <tr><td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td></tr>
+              <tr>
+                <td style="padding:34px 36px 28px;background:linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));text-align:center;border-bottom:1px solid rgba(255,255,255,.06);">
+                  <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:50px;width:auto;border:0;" />
+                  <h1 style="margin:18px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;">${firstName}, continue the simulation for ${idea}</h1>
+                  <p style="margin:10px auto 0;color:#b8c0c9;font-size:15px;line-height:1.65;max-width:480px;">Your preview is saved. Complete it when you are ready to review the deeper analysis.</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:30px 36px 8px;">
+                  ${defaultBody}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">
+                    <tr>
+                      <td align="center">
+                        <a href="${escapeHtml(ctaUrl || 'https://www.revencast.com/pricing?return_context=simulation_resume&utm_source=email&utm_medium=reengagement&utm_campaign=preview_upgrade')}" style="display:inline-block;padding:16px 28px;border-radius:12px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;">Unlock Full Report - $1.99</a>
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="margin:16px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;text-align:center;">This opens the saved preview flow using your existing inputs.</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">
+                  Questions? <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a><br />
+                  You are getting this because you ran a free preview for "${idea}".
+                </td>
+              </tr>
+            </table>
+            ${openPixelUrl ? `<img src="${escapeHtml(openPixelUrl)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;overflow:hidden;" />` : ''}
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+function buildReEngageEmailHtml(options) {
+  return parseReEngageTemplateKey(options?.templateKey) === 'full_report'
+    ? buildFullReportReEngageEmailHtml(options)
+    : buildSavedPreviewReEngageEmailHtml(options);
+}
+
+function buildReEngageEmailText({ name, email, ideaName, targetCountry, destinationUrl, templateKey }) {
+  const greeting = `${name ? getFirstName(name, email) : 'Hi'},`;
+  const idea = ideaName || 'your idea';
+  if (parseReEngageTemplateKey(templateKey) === 'full_report') {
+    return [
+      greeting,
+      '',
+      `You recently ran a free preview simulation for "${idea}"${targetCountry ? ` targeting the ${targetCountry} market.` : '.'}`,
+      '',
+      'Your preview is saved, so you can continue from the same idea and market inputs.',
+      '',
+      'Unlock your complete market validation report starting at $1.99 for a single credit.',
+      '',
+      'The complete simulation adds competitor context, financial estimates, risk notes, and execution planning.',
+      '',
+      `Unlock full report: ${destinationUrl}`,
+      '',
+      'Revencast Team'
+    ].join('\n');
+  }
+  return [
+    greeting,
+    '',
+    `You recently ran a free preview simulation for "${idea}"${targetCountry ? ` targeting the ${targetCountry} market.` : '.'}`,
+    '',
+    'Your preview is still saved, so you can continue without entering the idea again.',
+    '',
+    'Continuing the simulation will use the same idea and market inputs you already provided.',
+    '',
+    'The next step adds:',
+    '- competitor context',
+    '- financial estimates',
+    '- risk notes',
+    '- execution planning',
+    '',
+    `Continue here: ${destinationUrl}`,
+    '',
+    'Your preview data is safely saved.',
+    '',
+    'Revencast Team'
+  ].join('\n');
+}
+
 async function handler(req, res) {
   const { authorizeRequest, setCors } = await import('./_auth-utils.js');
   setCors(res, 'GET, POST, OPTIONS');
@@ -372,6 +494,7 @@ async function handler(req, res) {
       }
 
       const { recipients, custom_body, subject_line } = req.body || {};
+      const templateKey = parseReEngageTemplateKey(req.body?.template_key);
 
       if (!Array.isArray(recipients) || recipients.length === 0) {
         return res.status(400).json({ error: 'recipients array is required with at least one recipient' });
@@ -435,29 +558,17 @@ async function handler(req, res) {
                 targetCountry,
                 customBody: custom_body || '',
                 ctaUrl: clickUrl,
-                openPixelUrl
+                openPixelUrl,
+                templateKey
               }),
-              text: [
-                `${name ? getFirstName(name, email) : 'Hi'},`,
-                '',
-                `You recently ran a free preview simulation for "${ideaName || 'your idea'}"${targetCountry ? ` targeting the ${targetCountry} market.` : '.'}`,
-                '',
-                'Your preview is still saved, so you can continue without entering the idea again.',
-                '',
-                'Continuing the simulation will use the same idea and market inputs you already provided.',
-                '',
-                'The next step adds:',
-                '- competitor context',
-                '- financial estimates',
-                '- risk notes',
-                '- execution planning',
-                '',
-                `Continue here: ${destinationUrl}`,
-                '',
-                'Your preview data is safely saved.',
-                '',
-                'Revencast Team'
-              ].join('\n')
+              text: buildReEngageEmailText({
+                name,
+                email,
+                ideaName,
+                targetCountry,
+                destinationUrl,
+                templateKey
+              })
             })
           });
 
