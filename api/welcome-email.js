@@ -354,7 +354,6 @@ function buildFullReportReEngageEmailHtml({ name, email, ideaName, ideaDescripti
         </table>
       </div>
     </div>
-    <p style="margin:0 0 16px;color:#d0d0d0;font-size:15px;line-height:1.75;">Your inputs are saved. Click, pay, and your complete report generates instantly - no re-entering anything.</p>
     <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 credits for $9.95</strong> and keep validating without starting from scratch.</p>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 4px;"><tr><td align="center" style="padding:10px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);text-align:center;"><span style="color:#fbbf24;font-size:13px;line-height:1.5;font-weight:700;">Early access pricing will not last - lock in your rate now.</span></td></tr></table>
   `;
@@ -519,7 +518,7 @@ async function handler(req, res) {
           .replace(/\{idea\}/g, ideaName || 'your idea')
           .replace(/\{name\}/g, name || getFirstName(name, email))
           .replace(/\{country\}/g, targetCountry || 'your market')
-          || `The data on "${ideaName || 'your idea'}" is ready. You just haven't seen it yet.`;
+          || `What people really think about "${ideaName || 'your idea'}"`;
 
         if (!email) {
           errors.push({ email, error: 'Missing email address' });
