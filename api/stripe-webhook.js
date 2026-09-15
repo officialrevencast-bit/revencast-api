@@ -170,7 +170,7 @@ function escapeHtml(value) {
 
 function formatCreditsLabel(value) {
   const count = Math.max(0, Math.floor(Number(value) || 0));
-  return `${count} report credit${count === 1 ? '' : 's'}`;
+  return `${count} simulation${count === 1 ? '' : 's'}`;
 }
 
 function formatAmountLabel(cents, currency = 'usd') {
@@ -186,7 +186,7 @@ function formatAmountLabel(cents, currency = 'usd') {
 }
 
 function buildConfirmationEmailHtml({ planName, credits, amountCents, currency }) {
-  const safePlanName = escapeHtml(planName || 'Revencast credits');
+  const safePlanName = escapeHtml(planName || 'Revencast simulations');
   const safeCredits = escapeHtml(formatCreditsLabel(credits));
   const safeAmount = escapeHtml(formatAmountLabel(amountCents, currency));
 
@@ -200,7 +200,7 @@ function buildConfirmationEmailHtml({ planName, credits, amountCents, currency }
                 <td style="padding:28px 28px 18px;background:linear-gradient(135deg,rgba(94,211,243,.18),rgba(22,117,169,.10));">
                   <div style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#5ed3f3;font-weight:800;">Revencast</div>
                   <h1 style="margin:14px 0 0;font-size:28px;line-height:1.2;color:#ffffff;">Payment confirmed</h1>
-                  <p style="margin:10px 0 0;color:#b0b0b0;font-size:15px;line-height:1.6;">Your report credits have been added to your account.</p>
+                  <p style="margin:10px 0 0;color:#b0b0b0;font-size:15px;line-height:1.6;">Your simulations have been added to your account.</p>
                 </td>
               </tr>
               <tr>
@@ -211,7 +211,7 @@ function buildConfirmationEmailHtml({ planName, credits, amountCents, currency }
                       <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safePlanName}</td>
                     </tr>
                     <tr>
-                      <td style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#b0b0b0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Credits</td>
+                      <td style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#b0b0b0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Simulations</td>
                       <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safeCredits}</td>
                     </tr>
                     <tr>
@@ -219,13 +219,13 @@ function buildConfirmationEmailHtml({ planName, credits, amountCents, currency }
                       <td align="right" style="padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid rgba(94,211,243,.14);border-radius:12px;color:#ffffff;font-weight:800;">${safeAmount}</td>
                     </tr>
                   </table>
-                  <p style="margin:18px 0 0;color:#b0b0b0;font-size:14px;line-height:1.7;">Each report credit can be used to generate one Revencast market validation report with the sections included in your pricing plan.</p>
+                  <p style="margin:18px 0 0;color:#b0b0b0;font-size:14px;line-height:1.7;">Each simulation generates one Revencast market validation report with every section included in your pricing plan.</p>
                   <a href="https://revencast.com/dashboard" style="display:inline-block;margin-top:22px;padding:13px 18px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;">Go to dashboard</a>
                 </td>
               </tr>
               <tr>
                 <td style="padding:18px 28px;border-top:1px solid rgba(255,255,255,.08);color:#7f8b99;font-size:12px;line-height:1.6;">
-                  Questions? Contact support@revencast.com. This email is a confirmation of your Revencast credit purchase.
+                  Questions? Contact support@revencast.com. This email confirms your Revencast simulation purchase.
                 </td>
               </tr>
             </table>
@@ -252,14 +252,14 @@ async function sendConfirmationEmail(customerEmail, purchase) {
     body: JSON.stringify({
       from: 'noreply@revencast.com',
       to: customerEmail,
-      subject: `Payment confirmed: ${purchase?.planName || 'Revencast credits'}`,
+      subject: `Payment confirmed: ${purchase?.planName || 'Revencast simulations'}`,
       html: buildConfirmationEmailHtml(purchase),
       text: [
         'Payment confirmed',
-        `Plan: ${purchase?.planName || 'Revencast credits'}`,
-        `Credits: ${formatCreditsLabel(purchase?.credits)}`,
+        `Plan: ${purchase?.planName || 'Revencast simulations'}`,
+        `Simulations: ${formatCreditsLabel(purchase?.credits)}`,
         `Amount paid: ${formatAmountLabel(purchase?.amountCents, purchase?.currency)}`,
-        'Each report credit can be used to generate one Revencast market validation report.',
+        'Each simulation generates one Revencast market validation report.',
         'Dashboard: https://revencast.com/dashboard'
       ].join('\n')
     })
