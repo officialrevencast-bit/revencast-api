@@ -59,7 +59,7 @@ function buildTrackedUrls(req, trackingId, templateKey = 'saved_preview') {
   if (!isOnboardingCredits) destination.searchParams.set('return_context', 'simulation_resume');
   destination.searchParams.set('utm_source', 'email');
   destination.searchParams.set('utm_medium', 'reengagement');
-  destination.searchParams.set('utm_campaign', isOnboardingCredits ? 'onboarding_credits_reminder' : 'preview_upgrade');
+  destination.searchParams.set('utm_campaign', isOnboardingCredits ? 'onboarding_simulations_reminder' : 'preview_upgrade');
   destination.searchParams.set('email_tracking_id', trackingId);
 
   const click = new URL('/api/welcome-email', origin);
@@ -272,7 +272,7 @@ function buildOnboardingCreditsReEngageEmailHtml({ name, email, creditsRemaining
   const credits = Math.max(1, Math.min(2, Number(creditsRemaining) || 2));
   const bodyContent = String(customBody || '').trim();
   const defaultBody = bodyContent || `
-    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">You have <strong style="color:#5ed3f3;">${credits} free Revencast credit${credits === 1 ? '' : 's'}</strong> waiting in your account. ${credits === 1 ? 'Use it' : 'Use them'} to pressure-test the ideas worth pursuing before you commit more time, budget, or momentum.</p>
+    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">You have <strong style="color:#5ed3f3;">${credits} free Revencast simulation${credits === 1 ? '' : 's'}</strong> waiting in your account. ${credits === 1 ? 'Use it' : 'Use them'} to pressure-test the ideas worth pursuing before you commit more time, budget, or momentum.</p>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;border:1px solid rgba(94,211,243,.28);border-radius:14px;background:rgba(94,211,243,.08);">
       <tr><td style="padding:20px;text-align:center;"><div style="color:#5ed3f3;font-size:30px;line-height:1;font-weight:900;">${credits}</div><div style="margin-top:6px;color:#ffffff;font-size:15px;font-weight:800;">free idea validation${credits === 1 ? '' : 's'}</div><div style="margin-top:6px;color:#b8c0c9;font-size:13px;line-height:1.55;">Market signals, competitor context, pricing guidance, and practical next steps.</div></td></tr>
     </table>
@@ -280,18 +280,18 @@ function buildOnboardingCreditsReEngageEmailHtml({ name, email, creditsRemaining
   `;
   return `
     <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
-      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your free Revencast credits are ready when your next idea is.</div>
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your free Revencast simulations are ready when your next idea is.</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;"><tr><td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 18px 46px rgba(0,0,0,.40);">
           <tr><td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td></tr>
           <tr><td style="padding:34px 36px 28px;background:linear-gradient(135deg,rgba(94,211,243,.18),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
             <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:50px;width:auto;border:0;display:block;" />
-            <h1 style="margin:20px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;">${firstName}, your free credits are ready</h1>
+            <h1 style="margin:20px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;">${firstName}, your free simulations are ready</h1>
             <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.65;">Turn your next idea into a better-informed decision.</p>
           </td></tr>
           <tr><td style="padding:30px 36px 10px;">${defaultBody}
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td align="center"><a href="${escapeHtml(ctaUrl || 'https://www.revencast.com/simulation')}" style="display:inline-block;padding:16px 28px;border-radius:12px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;">Use my free credits</a></td></tr></table>
-            <p style="margin:16px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;text-align:center;">No checkout required. Your available credits are already in your account.</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td align="center"><a href="${escapeHtml(ctaUrl || 'https://www.revencast.com/simulation')}" style="display:inline-block;padding:16px 28px;border-radius:12px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;">Start my free simulation${credits === 1 ? '' : 's'}</a></td></tr></table>
+            <p style="margin:16px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;text-align:center;">No checkout required. Your available simulations are already in your account.</p>
           </td></tr>
           <tr><td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">Questions? <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a>.</td></tr>
         </table>${openPixelUrl ? `<img src="${escapeHtml(openPixelUrl)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;overflow:hidden;" />` : ''}
@@ -390,7 +390,7 @@ function buildFullReportReEngageEmailHtml({ name, email, ideaName, ideaDescripti
         </table>
       </div>
     </div>
-    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 credits for $9.95</strong> and keep validating without starting from scratch.</p>
+    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">Building more than one idea? Get <strong style="color:#5ed3f3;">5 simulations for $9.95</strong> and keep validating without starting from scratch.</p>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 4px;"><tr><td align="center" style="padding:10px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);text-align:center;"><span style="color:#fbbf24;font-size:13px;line-height:1.5;font-weight:700;">Early access pricing will not last - lock in your rate now.</span></td></tr></table>
   `;
 
@@ -449,9 +449,9 @@ function buildReEngageEmailText({ name, email, ideaName, targetCountry, destinat
   if (parseReEngageTemplateKey(templateKey) === 'onboarding_credits') {
     const credits = Math.max(1, Math.min(2, Number(creditsRemaining) || 2));
     return [
-      greeting, '', `You have ${credits} free Revencast credit${credits === 1 ? '' : 's'} waiting in your account.`, '',
+      greeting, '', `You have ${credits} free Revencast simulation${credits === 1 ? '' : 's'} waiting in your account.`, '',
       'Use them to validate the ideas worth pursuing with market signals, competitor context, pricing guidance, and practical next steps.', '',
-      `Use your free credits: ${destinationUrl}`, '', 'No checkout required.', '', 'Revencast Team'
+      `Start your free simulation${credits === 1 ? '' : 's'}: ${destinationUrl}`, '', 'No checkout required.', '', 'Revencast Team'
     ].join('\n');
   }
   if (parseReEngageTemplateKey(templateKey) === 'full_report') {
@@ -462,7 +462,7 @@ function buildReEngageEmailText({ name, email, ideaName, targetCountry, destinat
       '',
       'Your preview is saved, so you can continue from the same idea and market inputs.',
       '',
-      'Unlock your complete market validation report starting at $1.99 for a single credit.',
+      'Unlock your complete market validation report starting at $1.99 for a single simulation.',
       '',
       'The complete simulation adds competitor context, financial estimates, risk notes, and execution planning.',
       '',
@@ -564,6 +564,8 @@ async function handler(req, res) {
           .replace(/\{name\}/g, name || getFirstName(name, email))
           .replace(/\{country\}/g, targetCountry || 'your market')
           .replace(/\{credits\}/g, String(Math.max(1, Math.min(2, creditsRemaining || 2))))
+          .replace(/\{simulation_label\}/g, Number(creditsRemaining || 2) === 1 ? 'simulation' : 'simulations')
+          .replace(/\{simulation_verb\}/g, Number(creditsRemaining || 2) === 1 ? 'is' : 'are')
           || `What people really think about "${ideaName || 'your idea'}"`;
 
         if (!email) {
