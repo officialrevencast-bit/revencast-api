@@ -29,7 +29,7 @@ function getPlanFromRequest(body = {}) {
     plan_key: 'custom',
     plan_name: `Custom (${credits} Reports)`,
     product_id: '',
-    product_name: 'Revencast Custom Report Credits',
+    product_name: 'Revencast Custom Simulations',
     product_description: `Generate ${credits} custom product idea validation report${credits === 1 ? '' : 's'}. Each report includes 12 structured analysis sections with detailed business insights.`,
     credits,
     amount_cents: calculateCustomAmountCents(credits),
