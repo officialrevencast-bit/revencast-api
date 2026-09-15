@@ -81,7 +81,7 @@ async function rpc(supabaseUrl, serviceKey, functionName, body) {
   return payload;
 }
 
-function buildWelcomeEmailHtml({ name, email }) {
+function buildWelcomeEmailHtml({ name, email, credits = 2 }) {
   const firstName = (name || email || '').split(/\s+/)[0] || 'there';
   const safeFirstName = String(firstName).replace(/[&<>"']/g, '');
   const safeEmail = String(email || '').replace(/[&<>"']/g, '');
@@ -97,7 +97,8 @@ function buildWelcomeEmailHtml({ name, email }) {
                 <td style="padding:36px 36px 26px;background:radial-gradient(circle at 15% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
                   <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:52px;width:auto;border:0;display:block;" />
                   <h1 style="margin:18px 0 0;font-size:30px;line-height:1.25;color:#ffffff;font-weight:800;letter-spacing:-.01em;">Welcome, ${safeFirstName}</h1>
-                  <p style="margin:12px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Your Revencast account is ready. You can now validate product ideas with market signals, competitor context, pricing guidance, and execution-focused reports.</p>
+                  <h2 style="margin:16px 0 0;color:#5ed3f3;font-size:20px;line-height:1.35;font-weight:800;">${credits} free credits, already in your account</h2>
+                  <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Start with the ideas that matter most. Your credits unlock evidence-led market validation, competitor context, pricing guidance, and clear next steps—before you invest more time or money.</p>
                 </td>
               </tr>
               <tr>
@@ -107,7 +108,7 @@ function buildWelcomeEmailHtml({ name, email }) {
                       <td style="padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
-                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Run your first simulation</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Describe your idea, choose a target country, and generate a structured market validation report.</div></td>
+                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Validate two ideas on us</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Use your ${credits} free credits to test the opportunities you are most serious about—no checkout required.</div></td>
                           </tr>
                         </table>
                       </td>
@@ -122,7 +123,7 @@ function buildWelcomeEmailHtml({ name, email }) {
                       </td>
                     </tr>
                   </table>
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td><a href="https://revencast.com/simulation" style="display:inline-block;padding:14px 24px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;box-shadow:0 10px 24px rgba(94,211,243,.25);">Start a simulation &rarr;</a></td></tr></table>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td><a href="https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_credits" style="display:inline-block;padding:14px 24px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;box-shadow:0 10px 24px rgba(94,211,243,.25);">Use my ${credits} free credits &rarr;</a></td></tr></table>
                 </td>
               </tr>
               <tr>
@@ -136,7 +137,7 @@ function buildWelcomeEmailHtml({ name, email }) {
   `;
 }
 
-async function sendWelcomeEmail(resendApiKey, email, displayName) {
+async function sendWelcomeEmail(resendApiKey, email, displayName, credits = 2) {
   if (!resendApiKey || !email) return;
   try {
     await fetch('https://api.resend.com/emails', {
@@ -149,12 +150,13 @@ async function sendWelcomeEmail(resendApiKey, email, displayName) {
       body: JSON.stringify({
         from: 'Revencast <noreply@revencast.com>',
         to: email,
-        subject: 'Welcome to Revencast',
-        html: buildWelcomeEmailHtml({ name: displayName, email }),
+        subject: `Welcome to Revencast — your ${credits} free credits are ready`,
+        html: buildWelcomeEmailHtml({ name: displayName, email, credits }),
         text: [
           `Welcome to Revencast, ${displayName.split(/\s+/)[0] || email.split('@')[0] || 'there'}.`,
-          'Your account is ready.',
-          'Start a simulation: https://revencast.com/simulation',
+          `Your account is ready and ${credits} free credits have been added.`,
+          'Use them to validate two ideas with market signals, competitor context, pricing guidance, and execution-focused reports.',
+          'Start a simulation: https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_credits',
           'Questions? Contact support@revencast.com.'
         ].join('\n')
       })
@@ -204,20 +206,30 @@ async function ensureUserAccount(supabaseUrl, serviceKey, auth, body = {}) {
   }
   const row = Array.isArray(payload) ? payload[0] : payload;
 
+  // Atomic and idempotent: records the free-credit grant in the ledger and
+  // prevents retries or concurrent authentication requests from double-granting.
+  await rpc(supabaseUrl, serviceKey, 'grant_onboarding_credits', {
+    p_firebase_uid: auth.uid,
+    p_credits: 2,
+    p_metadata: { source: 'registration', grant_version: '2026-09-onboarding-credits' }
+  });
+  const accountWithGrant = await getUserAccount(supabaseUrl, serviceKey, auth.uid);
+  const grantedCredits = Number(accountWithGrant?.onboarding_credits_granted || 2);
+
   // Send the welcome email at most once per user, ever — guaranteed by an
   // atomic DB-level claim rather than inferring "new user" from timestamps.
-  if (row && email) {
+  if (accountWithGrant && email) {
     claimWelcomeEmailSlot(supabaseUrl, serviceKey, auth.uid)
       .then((claimed) => {
         if (claimed) {
           const resendApiKey = getEnv('RESEND_API_KEY');
-          sendWelcomeEmail(resendApiKey, email, displayName);
+          sendWelcomeEmail(resendApiKey, email, displayName, grantedCredits);
         }
       })
       .catch((err) => logError('Welcome email claim failed (non-blocking):', err?.message || err));
   }
 
-  return row;
+  return accountWithGrant || row;
 }
 
 async function updateUserAccountProfile(supabaseUrl, serviceKey, auth, body = {}) {
@@ -1707,48 +1719,46 @@ async function handler(req, res) {
             limit: '5000'
           }),
           fetchSupabaseRows(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, 'user_accounts', {
-            select: 'firebase_uid,email,display_name,credits_balance,total_credits_purchased,total_credits_used,free_preview_used_at,created_at',
+            select: 'firebase_uid,email,display_name,credits_balance,total_credits_purchased,total_credits_used,onboarding_credits_granted,onboarding_credits_remaining,created_at',
             limit: '5000'
           })
         ]);
 
         const userById = new Map(users.map((u) => [String(u?.firebase_uid || ''), u]));
 
-        // Get preview reports grouped by user, only for users with 0 credits and no purchases
-        const previewReportsByUser = new Map();
+        // A user is eligible while at least one specifically granted onboarding
+        // credit remains. This avoids treating purchased credits as free credits.
+        const reportsByUser = new Map();
         reports
-          .filter((r) => r?.is_preview === true || String(r?.status || '').toLowerCase() === 'preview')
           .forEach((r) => {
             const uid = String(r?.user_id || '').trim();
             if (!uid) return;
-            if (!previewReportsByUser.has(uid)) previewReportsByUser.set(uid, []);
-            previewReportsByUser.get(uid).push(r);
+            if (!reportsByUser.has(uid)) reportsByUser.set(uid, []);
+            reportsByUser.get(uid).push(r);
           });
 
         let rows = [];
-        for (const [uid, userReports] of previewReportsByUser) {
-          const user = userById.get(uid);
-          // Only include users who have 0 credits and never purchased
-          const creditsBalance = Number(user?.credits_balance || 0);
-          const totalPurchased = Number(user?.total_credits_purchased || 0);
-          const totalUsed = Number(user?.total_credits_used || 0);
-          if (creditsBalance > 0 || totalPurchased > 0 || totalUsed > 0) continue;
+        for (const user of users) {
+          const uid = String(user?.firebase_uid || '').trim();
+          if (!uid || Number(user?.onboarding_credits_remaining || 0) <= 0) continue;
           if (!user?.email) continue;
+          const userReports = reportsByUser.get(uid) || [];
 
-          const latestPreview = userReports.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
-          const input = latestPreview?.input || {};
+          const latestReport = [...userReports].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+          const input = latestReport?.input || {};
           
           rows.push({
             firebase_uid: uid,
             email: user.email,
             display_name: user.display_name || '',
             created_at: user.created_at || '',
+            onboarding_credits_remaining: Number(user.onboarding_credits_remaining || 0),
             preview_count: userReports.length,
-            latest_preview_at: latestPreview?.created_at || '',
-            latest_idea_name: latestPreview?.idea_name || input?.idea_name || '',
+            latest_preview_at: latestReport?.created_at || user.created_at || '',
+            latest_idea_name: latestReport?.idea_name || input?.idea_name || '',
             latest_product_idea: input?.product_idea || '',
-            latest_target_country: latestPreview?.target_country || input?.target_country || '',
-            latest_preview_id: latestPreview?.id || ''
+            latest_target_country: latestReport?.target_country || input?.target_country || '',
+            latest_preview_id: latestReport?.id || ''
           });
         }
 
@@ -1762,7 +1772,7 @@ async function handler(req, res) {
         if (from) rows = rows.filter((r) => new Date(r?.latest_preview_at || 0).getTime() >= new Date(from).getTime());
         if (to) rows = rows.filter((r) => new Date(r?.latest_preview_at || 0).getTime() <= new Date(to).getTime());
 
-        // Sort by latest preview date descending
+        // Surface users with the most free credits, then the most recent activity.
         rows.sort((a, b) => String(b.latest_preview_at || '').localeCompare(String(a.latest_preview_at || '')));
 
         const paged = rows.slice(offset, offset + limit);
