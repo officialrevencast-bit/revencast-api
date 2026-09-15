@@ -97,8 +97,8 @@ function buildWelcomeEmailHtml({ name, email, credits = 2 }) {
                 <td style="padding:36px 36px 26px;background:radial-gradient(circle at 15% 0%,rgba(94,211,243,.20),transparent 55%),linear-gradient(135deg,rgba(94,211,243,.14),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
                   <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:52px;width:auto;border:0;display:block;" />
                   <h1 style="margin:18px 0 0;font-size:30px;line-height:1.25;color:#ffffff;font-weight:800;letter-spacing:-.01em;">Welcome, ${safeFirstName}</h1>
-                  <h2 style="margin:16px 0 0;color:#5ed3f3;font-size:20px;line-height:1.35;font-weight:800;">${credits} free credits, already in your account</h2>
-                  <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Start with the ideas that matter most. Your credits unlock evidence-led market validation, competitor context, pricing guidance, and clear next steps—before you invest more time or money.</p>
+                  <h2 style="margin:16px 0 0;color:#5ed3f3;font-size:20px;line-height:1.35;font-weight:800;">${credits} free simulation${credits === 1 ? '' : 's'}, already in your account</h2>
+                  <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.75;max-width:480px;">Start with the ideas that matter most. Your simulations unlock evidence-led market validation, competitor context, pricing guidance, and clear next steps—before you invest more time or money.</p>
                 </td>
               </tr>
               <tr>
@@ -108,7 +108,7 @@ function buildWelcomeEmailHtml({ name, email, credits = 2 }) {
                       <td style="padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(94,211,243,.16);border-radius:14px;">
                         <table role="presentation" cellspacing="0" cellpadding="0">
                           <tr>
-                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Validate two ideas on us</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Use your ${credits} free credits to test the opportunities you are most serious about—no checkout required.</div></td>
+                            <td><div style="color:#ffffff;font-weight:800;font-size:15px;">Validate two ideas on us</div><div style="margin-top:6px;color:#b0b0b0;font-size:14px;line-height:1.6;">Use your ${credits} free simulation${credits === 1 ? '' : 's'} to test the opportunities you are most serious about—no checkout required.</div></td>
                           </tr>
                         </table>
                       </td>
@@ -123,7 +123,7 @@ function buildWelcomeEmailHtml({ name, email, credits = 2 }) {
                       </td>
                     </tr>
                   </table>
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td><a href="https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_credits" style="display:inline-block;padding:14px 24px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;box-shadow:0 10px 24px rgba(94,211,243,.25);">Use my ${credits} free credits &rarr;</a></td></tr></table>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td><a href="https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_simulations" style="display:inline-block;padding:14px 24px;border-radius:14px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;box-shadow:0 10px 24px rgba(94,211,243,.25);">Start my free simulation${credits === 1 ? '' : 's'} &rarr;</a></td></tr></table>
                 </td>
               </tr>
               <tr>
@@ -150,13 +150,13 @@ async function sendWelcomeEmail(resendApiKey, email, displayName, credits = 2) {
       body: JSON.stringify({
         from: 'Revencast <noreply@revencast.com>',
         to: email,
-        subject: `Welcome to Revencast — your ${credits} free credits are ready`,
+        subject: `Welcome to Revencast — your ${credits} free simulation${credits === 1 ? '' : 's'} ${credits === 1 ? 'is' : 'are'} ready`,
         html: buildWelcomeEmailHtml({ name: displayName, email, credits }),
         text: [
           `Welcome to Revencast, ${displayName.split(/\s+/)[0] || email.split('@')[0] || 'there'}.`,
-          `Your account is ready and ${credits} free credits have been added.`,
+          `Your account is ready and ${credits} free simulation${credits === 1 ? '' : 's'} have been added.`,
           'Use them to validate two ideas with market signals, competitor context, pricing guidance, and execution-focused reports.',
-          'Start a simulation: https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_credits',
+          'Start a simulation: https://revencast.com/simulation?utm_source=email&utm_medium=welcome&utm_campaign=onboarding_simulations',
           'Questions? Contact support@revencast.com.'
         ].join('\n')
       })
