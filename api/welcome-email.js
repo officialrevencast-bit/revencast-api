@@ -52,13 +52,14 @@ function buildTrackingId() {
   return `${Date.now()}-${crypto.randomBytes(12).toString('hex')}`;
 }
 
-function buildTrackedUrls(req, trackingId) {
+function buildTrackedUrls(req, trackingId, templateKey = 'saved_preview') {
   const origin = getOrigin(req).replace(/\/+$/, '');
-  const destination = new URL('/pricing', origin);
-  destination.searchParams.set('return_context', 'simulation_resume');
+  const isOnboardingCredits = parseReEngageTemplateKey(templateKey) === 'onboarding_credits';
+  const destination = new URL(isOnboardingCredits ? '/simulation' : '/pricing', origin);
+  if (!isOnboardingCredits) destination.searchParams.set('return_context', 'simulation_resume');
   destination.searchParams.set('utm_source', 'email');
   destination.searchParams.set('utm_medium', 'reengagement');
-  destination.searchParams.set('utm_campaign', 'preview_upgrade');
+  destination.searchParams.set('utm_campaign', isOnboardingCredits ? 'onboarding_credits_reminder' : 'preview_upgrade');
   destination.searchParams.set('email_tracking_id', trackingId);
 
   const click = new URL('/api/welcome-email', origin);
@@ -261,7 +262,41 @@ function buildWelcomeEmailHtml({ name, email }) {
 
 function parseReEngageTemplateKey(value) {
   const key = String(value || '').trim().toLowerCase();
-  return key === 'full_report' ? 'full_report' : 'saved_preview';
+  if (key === 'full_report') return 'full_report';
+  if (key === 'onboarding_credits') return 'onboarding_credits';
+  return 'saved_preview';
+}
+
+function buildOnboardingCreditsReEngageEmailHtml({ name, email, creditsRemaining, customBody, ctaUrl, openPixelUrl }) {
+  const firstName = escapeHtml(getFirstName(name, email));
+  const credits = Math.max(1, Math.min(2, Number(creditsRemaining) || 2));
+  const bodyContent = String(customBody || '').trim();
+  const defaultBody = bodyContent || `
+    <p style="margin:0 0 18px;color:#d0d0d0;font-size:15px;line-height:1.75;">You have <strong style="color:#5ed3f3;">${credits} free Revencast credit${credits === 1 ? '' : 's'}</strong> waiting in your account. ${credits === 1 ? 'Use it' : 'Use them'} to pressure-test the ideas worth pursuing before you commit more time, budget, or momentum.</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;border:1px solid rgba(94,211,243,.28);border-radius:14px;background:rgba(94,211,243,.08);">
+      <tr><td style="padding:20px;text-align:center;"><div style="color:#5ed3f3;font-size:30px;line-height:1;font-weight:900;">${credits}</div><div style="margin-top:6px;color:#ffffff;font-size:15px;font-weight:800;">free idea validation${credits === 1 ? '' : 's'}</div><div style="margin-top:6px;color:#b8c0c9;font-size:13px;line-height:1.55;">Market signals, competitor context, pricing guidance, and practical next steps.</div></td></tr>
+    </table>
+    <p style="margin:0;color:#d0d0d0;font-size:15px;line-height:1.75;">A strong idea deserves evidence, not guesswork. Start with the one decision you want to make with more confidence today.</p>
+  `;
+  return `
+    <div style="margin:0;padding:0;background:#0f1215;color:#f0f0f0;font-family:'Segoe UI',Arial,sans-serif;">
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your free Revencast credits are ready when your next idea is.</div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f1215;padding:34px 16px;"><tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#1a1e24;border:1px solid rgba(94,211,243,.24);border-radius:20px;overflow:hidden;box-shadow:0 18px 46px rgba(0,0,0,.40);">
+          <tr><td style="height:4px;background:linear-gradient(90deg,#5ed3f3,#1675a9,#5ed3f3);"></td></tr>
+          <tr><td style="padding:34px 36px 28px;background:linear-gradient(135deg,rgba(94,211,243,.18),rgba(22,117,169,.08));border-bottom:1px solid rgba(255,255,255,.06);">
+            <img src="https://www.revencast.com/logo/rbg.png" alt="Revencast" style="height:50px;width:auto;border:0;display:block;" />
+            <h1 style="margin:20px 0 0;font-size:27px;line-height:1.3;color:#ffffff;font-weight:800;">${firstName}, your free credits are ready</h1>
+            <p style="margin:10px 0 0;color:#b8c0c9;font-size:15px;line-height:1.65;">Turn your next idea into a better-informed decision.</p>
+          </td></tr>
+          <tr><td style="padding:30px 36px 10px;">${defaultBody}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;"><tr><td align="center"><a href="${escapeHtml(ctaUrl || 'https://www.revencast.com/simulation')}" style="display:inline-block;padding:16px 28px;border-radius:12px;background:linear-gradient(135deg,#5ed3f3,#1675a9);color:#0f1215;text-decoration:none;font-weight:900;font-size:15px;">Use my free credits</a></td></tr></table>
+            <p style="margin:16px 0 0;color:#7f8b99;font-size:13px;line-height:1.5;text-align:center;">No checkout required. Your available credits are already in your account.</p>
+          </td></tr>
+          <tr><td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);color:#7f8b99;font-size:12px;line-height:1.6;">Questions? <a href="mailto:support@revencast.com" style="color:#5ed3f3;text-decoration:none;">support@revencast.com</a>.</td></tr>
+        </table>${openPixelUrl ? `<img src="${escapeHtml(openPixelUrl)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;overflow:hidden;" />` : ''}
+      </td></tr></table>
+    </div>`;
 }
 
 function buildSavedPreviewReEngageEmailHtml({ name, email, ideaName, ideaDescription, targetCountry, customBody, ctaUrl, openPixelUrl }) {
@@ -403,14 +438,22 @@ function buildFullReportReEngageEmailHtml({ name, email, ideaName, ideaDescripti
 }
 
 function buildReEngageEmailHtml(options) {
-  return parseReEngageTemplateKey(options?.templateKey) === 'full_report'
-    ? buildFullReportReEngageEmailHtml(options)
-    : buildSavedPreviewReEngageEmailHtml(options);
+  const templateKey = parseReEngageTemplateKey(options?.templateKey);
+  if (templateKey === 'onboarding_credits') return buildOnboardingCreditsReEngageEmailHtml(options);
+  return templateKey === 'full_report' ? buildFullReportReEngageEmailHtml(options) : buildSavedPreviewReEngageEmailHtml(options);
 }
 
-function buildReEngageEmailText({ name, email, ideaName, targetCountry, destinationUrl, templateKey }) {
+function buildReEngageEmailText({ name, email, ideaName, targetCountry, destinationUrl, templateKey, creditsRemaining }) {
   const greeting = `${name ? getFirstName(name, email) : 'Hi'},`;
   const idea = ideaName || 'your idea';
+  if (parseReEngageTemplateKey(templateKey) === 'onboarding_credits') {
+    const credits = Math.max(1, Math.min(2, Number(creditsRemaining) || 2));
+    return [
+      greeting, '', `You have ${credits} free Revencast credit${credits === 1 ? '' : 's'} waiting in your account.`, '',
+      'Use them to validate the ideas worth pursuing with market signals, competitor context, pricing guidance, and practical next steps.', '',
+      `Use your free credits: ${destinationUrl}`, '', 'No checkout required.', '', 'Revencast Team'
+    ].join('\n');
+  }
   if (parseReEngageTemplateKey(templateKey) === 'full_report') {
     return [
       greeting,
@@ -513,12 +556,14 @@ async function handler(req, res) {
         const ideaName = String(recipient.idea_name || '').trim();
         const ideaDescription = String(recipient.product_idea || '').trim();
         const targetCountry = String(recipient.target_country || '').trim();
+        const creditsRemaining = Number(recipient.onboarding_credits_remaining || 0);
         const trackingId = buildTrackingId();
-        const { clickUrl, openPixelUrl, destinationUrl } = buildTrackedUrls(req, trackingId);
+        const { clickUrl, openPixelUrl, destinationUrl } = buildTrackedUrls(req, trackingId, templateKey);
         const subject = String(subject_line || '').trim()
           .replace(/\{idea\}/g, ideaName || 'your idea')
           .replace(/\{name\}/g, name || getFirstName(name, email))
           .replace(/\{country\}/g, targetCountry || 'your market')
+          .replace(/\{credits\}/g, String(Math.max(1, Math.min(2, creditsRemaining || 2))))
           || `What people really think about "${ideaName || 'your idea'}"`;
 
         if (!email) {
@@ -559,7 +604,8 @@ async function handler(req, res) {
                 customBody: custom_body || '',
                 ctaUrl: clickUrl,
                 openPixelUrl,
-                templateKey
+                templateKey,
+                creditsRemaining
               }),
               text: buildReEngageEmailText({
                 name,
@@ -567,7 +613,8 @@ async function handler(req, res) {
                 ideaName,
                 targetCountry,
                 destinationUrl,
-                templateKey
+                templateKey,
+                creditsRemaining
               })
             })
           });
